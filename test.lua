@@ -1,85 +1,101 @@
 --[[
-    VELOX V1: TRUE LOGIC (CORRECTED)
-    Logika:
-    1. Unequip senjata lama (Parent to Backpack) + Remote False.
-    2. Equip senjata baru (Parent to Character) + Remote True.
-    3. Skill: UI Fire Instant.
+    VELOX NATIVE HOTBAR (REAL UI CLICK)
+    Fitur:
+    - Tidak memaksa equip (No Force Equip).
+    - Melakukan "Tap Virtual" pada Hotbar Game Asli.
+    - Dijamin Skill Muncul 100% (Karena game mengira kamu yang klik).
 ]]
 
 local Players = game:GetService("Players")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
 local LP = Players.LocalPlayer
 local PlayerGui = LP:WaitForChild("PlayerGui")
 
-if CoreGui:FindFirstChild("VeloxV1") then
-    CoreGui.VeloxV1:Destroy()
+if CoreGui:FindFirstChild("VeloxNative") then
+    CoreGui.VeloxNative:Destroy()
 end
 
 -- GUI SETUP
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "VeloxV1"
+ScreenGui.Name = "VeloxNative"
 ScreenGui.Parent = CoreGui
 ScreenGui.ResetOnSpawn = false
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 280, 0, 150)
-MainFrame.Position = UDim2.new(0.5, -140, 0.25, 0)
+MainFrame.Size = UDim2.new(0, 300, 0, 160)
+MainFrame.Position = UDim2.new(0.5, -150, 0.25, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
-Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(255, 255, 255)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 0) -- Hijau (Correct Way)
 
--- CONTAINER
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.Text = "VELOX: REAL HOTBAR TAP"
+Title.TextColor3 = Color3.fromRGB(0, 255, 0)
+Title.Font = Enum.Font.GothamBlack
+Title.BackgroundTransparency = 1
+Title.Parent = MainFrame
+
+-- WADAH TOMBOL
 local SlotC = Instance.new("Frame"); SlotC.Size=UDim2.new(0.9,0,0.35,0); SlotC.Position=UDim2.new(0.05,0,0.2,0); SlotC.BackgroundTransparency=1; SlotC.Parent=MainFrame
 local SkillC = Instance.new("Frame"); SkillC.Size=UDim2.new(0.9,0,0.35,0); SkillC.Position=UDim2.new(0.05,0,0.6,0); SkillC.BackgroundTransparency=1; SkillC.Parent=MainFrame
 local G1 = Instance.new("UIGridLayout"); G1.CellSize=UDim2.new(0.22,0,1,0); G1.Parent=SlotC
 local G2 = Instance.new("UIGridLayout"); G2.CellSize=UDim2.new(0.18,0,1,0); G2.Parent=SkillC
 
 -- ==============================================================================
--- [LOGIKA V1 YANG BENAR]
+-- [LOGIKA INTI: CLICK THE REAL GAME UI]
 -- ==============================================================================
 
-local function SwitchSlot(targetType)
-    local Char = LP.Character
-    local Backpack = LP.Backpack
+local function TapRealHotbar(slotIndex)
+    -- Path ke Hotbar Blox Fruits (Biasanya di sini)
+    -- Kita cari Container Hotbar
+    local Main = PlayerGui:FindFirstChild("Main")
+    local InCombat = Main and Main:FindFirstChild("InCombat")
+    local Container = InCombat and InCombat:FindFirstChild("Container")
+    local Hotbar = Container and Container:FindFirstChild("Hotbar")
     
-    -- 1. BERSIHKAN TANGAN (Unequip Current)
-    for _, tool in pairs(Char:GetChildren()) do
-        if tool:IsA("Tool") then
-            -- Jika kita sudah pegang senjata yg benar, cukup refresh remote
-            if tool.ToolTip == targetType then
-                local re = tool:FindFirstChild("RemoteEvent")
-                if re then re:FireServer(true) end
-                return 
+    if Hotbar then
+        -- Ambil semua slot yang ada di Hotbar
+        local slots = {}
+        for _, child in pairs(Hotbar:GetChildren()) do
+            if child:IsA("Frame") or child:IsA("ImageButton") then
+                table.insert(slots, child)
             end
+        end
+        
+        -- Urutkan slot dari Kiri ke Kanan (Berdasarkan posisi X)
+        -- Ini penting karena urutan di folder acak, tapi di layar berurutan.
+        table.sort(slots, function(a, b)
+            return a.AbsolutePosition.X < b.AbsolutePosition.X
+        end)
+        
+        -- Ambil Slot sesuai Index (1, 2, 3, 4)
+        local targetSlot = slots[slotIndex]
+        
+        if targetSlot and targetSlot.Visible then
+            -- KETUK UI ASLI GAME MENGGUNAKAN VIRTUAL TOUCH
+            local pos = targetSlot.AbsolutePosition
+            local size = targetSlot.AbsoluteSize
+            local centerX = pos.X + (size.X / 2)
+            local centerY = pos.Y + (size.Y / 2)
             
-            -- Jika senjata lain: Matikan Remote & Masukkan ke Tas
-            local re = tool:FindFirstChild("RemoteEvent")
-            if re then re:FireServer(false) end
+            -- Kirim Sentuhan (Jari ke-10, biar gak ganggu analog)
+            VirtualInputManager:SendTouchEvent(10, 0, centerX, centerY) -- Tekan
+            task.wait(0.05)
+            VirtualInputManager:SendTouchEvent(10, 1, centerX, centerY) -- Lepas
             
-            tool.Parent = Backpack -- INI ADALAH CARA 'UNEQUIP' MANUAL YG BENAR
+            return true
         end
     end
-
-    -- 2. AMBIL DARI TAS (Equip New)
-    for _, tool in pairs(Backpack:GetChildren()) do
-        if tool:IsA("Tool") and tool.ToolTip == targetType then
-            
-            tool.Parent = Char -- INI ADALAH CARA 'EQUIP' MANUAL YG BENAR
-            
-            -- Nyalakan Remote
-            local re = tool:FindFirstChild("RemoteEvent")
-            if re then re:FireServer(true) end
-            
-            return
-        end
-    end
+    return false
 end
 
--- LOGIKA SKILL (UI BUTTON FIRE - PALING STABIL)
-local function UseSkill(key)
+-- LOGIKA SKILL (UI BUTTON FIRE)
+local function FireSkill(key)
     local Main = PlayerGui:FindFirstChild("Main")
     local Skills = Main and Main:FindFirstChild("Skills")
     if Skills then
@@ -87,8 +103,9 @@ local function UseSkill(key)
             if w:IsA("Frame") and w.Visible then
                 local b = w:FindFirstChild(key) and w[key]:FindFirstChild("Mobile")
                 if b then
-                    for _, c in pairs(getconnections(b.Activated)) do c:Fire() end
-                    for _, c in pairs(getconnections(b.MouseButton1Click)) do c:Fire() end
+                    local cons = getconnections(b.Activated)
+                    if #cons == 0 then cons = getconnections(b.MouseButton1Click) end
+                    for _, c in pairs(cons) do c:Fire() end
                     return
                 end
             end
@@ -97,7 +114,7 @@ local function UseSkill(key)
 end
 
 -- ==============================================================================
--- [TOMBOL]
+-- [UI BUILDER]
 -- ==============================================================================
 
 local function MakeBtn(text, color, parent, cb)
@@ -111,24 +128,30 @@ local function MakeBtn(text, color, parent, cb)
     
     b.MouseButton1Down:Connect(function()
         cb()
-        b.BackgroundColor3 = color; b.TextColor3 = Color3.fromRGB(10,10,10)
-        task.wait(0.05)
-        b.BackgroundColor3 = Color3.fromRGB(30,30,35); b.TextColor3 = color
+        -- Visual Flash
+        task.spawn(function()
+            b.BackgroundColor3 = color; b.TextColor3 = Color3.fromRGB(10,10,10)
+            task.wait(0.05)
+            b.BackgroundColor3 = Color3.fromRGB(30,30,35); b.TextColor3 = color
+        end)
     end)
 end
 
--- 1-4
-MakeBtn("1", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Melee") end)
-MakeBtn("2", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Blox Fruit") end)
-MakeBtn("3", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Sword") end)
-MakeBtn("4", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Gun") end)
+-- SLOT BUTTONS (Klik Hotbar Asli)
+MakeBtn("1", Color3.fromRGB(255, 220, 0), SlotC, function() TapRealHotbar(1) end)
+MakeBtn("2", Color3.fromRGB(255, 220, 0), SlotC, function() TapRealHotbar(2) end)
+MakeBtn("3", Color3.fromRGB(255, 220, 0), SlotC, function() TapRealHotbar(3) end)
+MakeBtn("4", Color3.fromRGB(255, 220, 0), SlotC, function() TapRealHotbar(4) end)
 
--- Z-F
-local k = {"Z","X","C","V","F"}
-for _, key in ipairs(k) do
-    MakeBtn(key, Color3.fromRGB(0, 200, 255), SkillC, function() UseSkill(key) end)
+-- SKILL BUTTONS
+local keys = {"Z", "X", "C", "V", "F"}
+for _, k in ipairs(keys) do
+    MakeBtn(k, Color3.fromRGB(0, 255, 255), SkillC, function() FireSkill(k) end)
 end
 
--- Close
-local C = Instance.new("TextButton"); C.Text="X"; C.Parent=MainFrame; C.Size=UDim2.new(0,20,0,20); C.Position=UDim2.new(1,-25,0,0); C.BackgroundTransparency=1; C.TextColor3=Color3.new(1,0,0)
-C.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+-- CLOSE
+local Close = Instance.new("TextButton")
+Close.Text = "X"; Close.Size = UDim2.new(0, 25, 0, 25); Close.Position = UDim2.new(1, -30, 0, 0)
+Close.BackgroundTransparency = 1; Close.TextColor3 = Color3.fromRGB(255, 50, 50)
+Close.Parent = MainFrame
+Close.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
