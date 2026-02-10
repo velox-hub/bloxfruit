@@ -1,131 +1,195 @@
--- ==============================================================================
--- [CORE] HYBRID SYSTEM SETUP
--- ==============================================================================
+--[[
+    VELOX DIAGNOSTIC TOOL (TESTER)
+    Oleh: Gemini Assistant
+    Fungsi: Mengecek apakah Script Hybrid bekerja di HP kamu.
+]]
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
 local LP = Players.LocalPlayer
 local PlayerGui = LP:WaitForChild("PlayerGui")
 
--- 1. FUNGSI FIRE BUTTON UI (UNTUK SKILL & JUMP - ANTI BAN)
-local function FireUI(btnObj)
-    if not btnObj then return end
-    if not btnObj.Visible then return end -- Hanya tekan jika tombol terlihat
-
-    -- Coba ambil koneksi klik
-    local connections = getconnections(btnObj.Activated)
-    if #connections == 0 then
-        connections = getconnections(btnObj.MouseButton1Click)
-    end
-
-    -- Paksa jalankan fungsi tombol
-    for _, conn in pairs(connections) do
-        conn:Fire()
-    end
+-- 1. BERSIHKAN UI LAMA
+if CoreGui:FindFirstChild("VeloxTester") then
+    CoreGui.VeloxTester:Destroy()
 end
 
--- 2. FUNGSI CARI TOMBOL SKILL OTOMATIS (Z, X, C...)
-local function TriggerSkillUI(key)
-    local MainUI = PlayerGui:FindFirstChild("Main")
-    local SkillsFolder = MainUI and MainUI:FindFirstChild("Skills")
+-- 2. GUI SETUP
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "VeloxTester"
+ScreenGui.Parent = CoreGui
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 350, 0, 250)
+MainFrame.Position = UDim2.new(0.5, -175, 0.5, -125)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
+MainFrame.Active = true
+MainFrame.Draggable = true
+MainFrame.Parent = ScreenGui
+Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(255, 180, 0)
+
+-- JUDUL
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 30)
+Title.Text = "VELOX HYBRID TESTER"
+Title.TextColor3 = Color3.fromRGB(255, 180, 0)
+Title.Font = Enum.Font.GothamBlack
+Title.BackgroundTransparency = 1
+Title.Parent = MainFrame
+
+-- LOG WINDOW (TEMPAT HASIL TEST)
+local LogScroll = Instance.new("ScrollingFrame")
+LogScroll.Size = UDim2.new(0.9, 0, 0.5, 0)
+LogScroll.Position = UDim2.new(0.05, 0, 0.15, 0)
+LogScroll.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+LogScroll.Parent = MainFrame
+local UIList = Instance.new("UIListLayout")
+UIList.Parent = LogScroll
+UIList.SortOrder = Enum.SortOrder.LayoutOrder
+
+-- FUNGSI LOGGING
+local function AddLog(text, type)
+    local color = Color3.fromRGB(255, 255, 255)
+    if type == "success" then color = Color3.fromRGB(50, 255, 100) end
+    if type == "error" then color = Color3.fromRGB(255, 80, 80) end
+    if type == "warn" then color = Color3.fromRGB(255, 200, 50) end
+
+    local Label = Instance.new("TextLabel")
+    Label.Size = UDim2.new(1, 0, 0, 20)
+    Label.BackgroundTransparency = 1
+    Label.Text = "["..os.date("%X").."] " .. text
+    Label.TextColor3 = color
+    Label.Font = Enum.Font.Code
+    Label.TextSize = 11
+    Label.TextXAlignment = Enum.TextXAlignment.Left
+    Label.Parent = LogScroll
     
-    if SkillsFolder then
-        -- Loop folder senjata (Saber, Buddha, Fishman, dll)
-        for _, weaponFrame in pairs(SkillsFolder:GetChildren()) do
-            -- Kita cari folder yang sedang VISIBLE (Artinya senjata itu yg lagi dipake)
-            if weaponFrame:IsA("Frame") and weaponFrame.Visible then
-                local KeyBtn = weaponFrame:FindFirstChild(key) and weaponFrame[key]:FindFirstChild("Mobile")
-                if KeyBtn then
-                    FireUI(KeyBtn)
-                    return
+    LogScroll.CanvasSize = UDim2.new(0, 0, 0, UIList.AbsoluteContentSize.Y)
+    LogScroll.CanvasPosition = Vector2.new(0, 9999) -- Auto scroll ke bawah
+end
+
+-- CONTAINER TOMBOL
+local BtnContainer = Instance.new("Frame")
+BtnContainer.Size = UDim2.new(0.9, 0, 0.3, 0)
+BtnContainer.Position = UDim2.new(0.05, 0, 0.68, 0)
+BtnContainer.BackgroundTransparency = 1
+BtnContainer.Parent = MainFrame
+local Grid = Instance.new("UIGridLayout")
+Grid.CellSize = UDim2.new(0.48, 0, 0.45, 0)
+Grid.Parent = BtnContainer
+
+-- ==============================================================================
+-- LOGIKA TESTER
+-- ==============================================================================
+
+local function MakeBtn(text, callback)
+    local btn = Instance.new("TextButton")
+    btn.Text = text
+    btn.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    btn.TextColor3 = Color3.new(1,1,1)
+    btn.Font = Enum.Font.GothamBold
+    btn.Parent = BtnContainer
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 6)
+    btn.MouseButton1Click:Connect(callback)
+end
+
+-- 1. TEST M1 (REMOTE)
+MakeBtn("TEST M1 (REMOTE)", function()
+    local s, e = pcall(function()
+        local remote = ReplicatedStorage.Modules.Net:FindFirstChild("RE/RegisterAttack")
+        if remote then
+            local args = { [1] = 0.4000000059604645 }
+            remote:FireServer(unpack(args))
+            AddLog("M1 Sent: Success", "success")
+        else
+            AddLog("M1 Remote Missing!", "error")
+        end
+    end)
+    if not s then AddLog("M1 Error: "..e, "error") end
+end)
+
+-- 2. TEST EQUIP (REMOTE)
+MakeBtn("TEST EQUIP (ANY)", function()
+    local s, e = pcall(function()
+        -- Cari senjata apapun di backpack untuk dites
+        local backpack = LP.Backpack
+        local tool = backpack:FindFirstChildOfClass("Tool")
+        
+        if tool then
+            LP.Character.Humanoid:EquipTool(tool)
+            local remote = tool:FindFirstChild("EquipEvent")
+            if remote then
+                remote:FireServer(true)
+                AddLog("Equip: " .. tool.Name, "success")
+            else
+                AddLog("Remote Equip Missing pada "..tool.Name, "warn")
+            end
+        else
+            AddLog("Tidak ada senjata di Backpack!", "warn")
+        end
+    end)
+    if not s then AddLog("Equip Error: "..e, "error") end
+end)
+
+-- 3. TEST SKILL Z (UI FIRE)
+MakeBtn("TEST SKILL Z (UI)", function()
+    local s, e = pcall(function()
+        local Main = PlayerGui:FindFirstChild("Main")
+        local Skills = Main and Main:FindFirstChild("Skills")
+        local Found = false
+        
+        if Skills then
+            for _, f in pairs(Skills:GetChildren()) do
+                if f:IsA("Frame") and f.Visible then
+                    AddLog("Senjata Aktif: "..f.Name, "warn")
+                    local Z = f:FindFirstChild("Z")
+                    local Mobile = Z and Z:FindFirstChild("Mobile")
+                    
+                    if Mobile then
+                        -- Coba Fire
+                        local cons = getconnections(Mobile.Activated)
+                        if #cons == 0 then cons = getconnections(Mobile.MouseButton1Click) end
+                        
+                        for _, c in pairs(cons) do c:Fire() end
+                        AddLog("Tombol Z Ditekan (Virtual)", "success")
+                        Found = true
+                    else
+                        AddLog("Tombol Z Mobile tidak ketemu!", "error")
+                    end
                 end
             end
         end
-    end
-end
-
--- ==============================================================================
--- [TOMBOL VELOX]
--- ==============================================================================
-
--- [[ 1. AUTO M1 (ATTACK) - VIA REMOTE ]]
-mkTool("SPAM M1", Theme.Red, function()
-    -- Menggunakan script RegisterAttack (Sesuai request)
-    -- Angka 0.4 adalah cooldown aman agar tidak terdeteksi exploit brutal
-    local args = {
-        [1] = 0.4000000059604645 -- Cooldown aman
-    }
-    
-    -- Fire Remote
-    local remote = ReplicatedStorage.Modules.Net:FindFirstChild("RE/RegisterAttack")
-    if remote then
-        remote:FireServer(unpack(args))
-    end
-end, SetBox)
-
--- [[ 2. EQUIP SENJATA - VIA REMOTE ]]
--- Fungsi Helper untuk Equip
-local function AutoEquip(weaponName)
-    local Char = LP.Character
-    local Backpack = LP.Backpack
-    
-    -- Cek apakah senjata ada di Backpack
-    local tool = Backpack:FindFirstChild(weaponName)
-    if tool then
-        Char.Humanoid:EquipTool(tool) -- Equip Fisik (Agar muncul di tangan)
-    else
-        tool = Char:FindFirstChild(weaponName) -- Cek kalau sudah dipegang
-    end
-
-    -- Jalankan Remote EquipEvent (Sesuai request kamu)
-    -- Ini penting untuk sinkronisasi animasi/stats di server
-    if tool then
-        local equipRemote = tool:FindFirstChild("EquipEvent")
-        if equipRemote then
-            local args = { [1] = true }
-            equipRemote:FireServer(unpack(args))
-        end
-    else
-        ShowNotification("Item tidak ditemukan!", Theme.Red)
-    end
-end
-
--- Tombol Equip (Sesuaikan Nama Senjata di sini)
-mkTool("EQUIP MELEE", Theme.Element, function()
-    -- Ganti "Fishman Karate" dengan nama Fighting Style kamu (misal: "Superhuman")
-    AutoEquip("Fishman Karate") 
-end, SetBox)
-
-mkTool("EQUIP SWORD", Theme.Element, function()
-    -- Ganti "Saber" dengan nama pedang kamu
-    AutoEquip("Saber") 
-end, SetBox)
-
--- [[ 3. SKILLS - VIA UI BUTTON (ANTI ZOOM/CONFLICT) ]]
--- Ini membajak tombol layar, jadi layar HP kamu tidak akan keganggu
-
-mkTool("SKILL Z", Theme.Blue, function() TriggerSkillUI("Z") end, SetBox)
-mkTool("SKILL X", Theme.Blue, function() TriggerSkillUI("X") end, SetBox)
-mkTool("SKILL C", Theme.Blue, function() TriggerSkillUI("C") end, SetBox)
-mkTool("SKILL V", Theme.Blue, function() TriggerSkillUI("V") end, SetBox)
-mkTool("SKILL F", Theme.Blue, function() TriggerSkillUI("F") end, SetBox)
-
--- [[ 4. MOVEMENT - VIA UI BUTTON ]]
-mkTool("JUMP / GEPPO", Theme.Green, function()
-    -- Mencari tombol Jump bawaan Roblox Mobile
-    local JumpBtn = PlayerGui:FindFirstChild("TouchGui") 
-        and PlayerGui.TouchGui:FindFirstChild("TouchControlFrame") 
-        and PlayerGui.TouchGui.TouchControlFrame:FindFirstChild("JumpButton")
-    
-    FireUI(JumpBtn)
-end, SetBox)
-
-mkTool("FLASH STEP", Theme.Accent, function()
-    -- Mencari tombol Soru di kanan layar
-    local SoruBtn = PlayerGui:FindFirstChild("MobileContextButtons") 
-        and PlayerGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
-        and PlayerGui.MobileContextButtons.ContextButtonFrame:FindFirstChild("BoundActionSoru")
-        and PlayerGui.MobileContextButtons.ContextButtonFrame.BoundActionSoru:FindFirstChild("Button")
         
-    FireUI(SoruBtn)
-end, SetBox)
+        if not Found then AddLog("Tidak ada senjata yg dipegang/Visible", "error") end
+    end)
+    if not s then AddLog("Skill Error: "..e, "error") end
+end)
+
+-- 4. TEST JUMP (UI FIRE)
+MakeBtn("TEST JUMP (UI)", function()
+    local s, e = pcall(function()
+        local JumpBtn = PlayerGui.TouchGui.TouchControlFrame.JumpButton
+        if JumpBtn then
+            local cons = getconnections(JumpBtn.Activated)
+            if #cons == 0 then cons = getconnections(JumpBtn.MouseButton1Click) end
+            
+            for _, c in pairs(cons) do c:Fire() end
+            AddLog("Jump Button Ditekan", "success")
+        else
+            AddLog("Tombol Jump Roblox Missing!", "error")
+        end
+    end)
+    if not s then AddLog("Jump Error: "..e, "error") end
+end)
+
+-- TUTUP
+local Close = Instance.new("TextButton")
+Close.Text = "X"
+Close.Size = UDim2.new(0, 30, 0, 30)
+Close.Position = UDim2.new(1, -35, 0, 5)
+Close.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+Close.Parent = MainFrame
+Instance.new("UICorner", Close).CornerRadius = UDim.new(0, 6)
+Close.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
