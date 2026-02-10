@@ -1,12 +1,15 @@
 --[[
-    VELOX V133 (FINAL STABLE & SMOOTH EDITION)
+    VELOX V134 (FINAL FIX: SAVE SYSTEM & UI POLISH)
     
-    [ CHANGELOGS & FIXES ]
-    1. SAVE FIXED: Popup ZIndex increased to 510, Click logic secured.
-    2. SCROLL FIXED: Vertical Scrolling ONLY. No horizontal shaking.
-    3. UI CLEANUP: Removed Global 'Hide Buttons'. Visibility is now Resizer-only.
-    4. SAFETY: 'Toggle Button R' cannot be hidden via Resizer.
-    5. CORE: All previous features (Joystick Pause 0.3s, Smart Cast, Weapon 1-4 Instant) preserved.
+    [ CRITICAL FIXES ]
+    1. SAVE SYSTEM: Fixed 'Create' button ZIndex. It is now clickable.
+    2. SCROLLING: Forced Vertical (Y) only. No horizontal shaking.
+    3. CLEANUP: Removed 'Hide Buttons' from Layout Tab (Resizer only now).
+    4. SAFETY: Main Toggle 'R' cannot be hidden.
+    5. CORE: 
+       - Joystick Pause 0.3s (Aim Fix).
+       - Keys 1-4 Always Instant (Weapon Switch).
+       - Full PC Keybind Support.
 ]]
 
 -- ==============================================================================
@@ -46,7 +49,6 @@ local KNOB_SIZE = 60
 local isRunning = false 
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
--- AreButtonsHidden variable removed as Global Hide is deleted
 local IsJoystickEnabled = false 
 local IsMovementPaused = false 
 
@@ -187,6 +189,7 @@ local function ShowNotification(text, color)
     NotifFrame.BackgroundColor3 = Theme.Sidebar
     NotifFrame.BackgroundTransparency = 0.1
     NotifFrame.Parent = NotifContainer
+    NotifFrame.ZIndex = 6000
     createCorner(NotifFrame, 8)
     createStroke(NotifFrame, color or Theme.Accent)
     
@@ -198,6 +201,7 @@ local function ShowNotification(text, color)
     Lbl.TextSize = 12
     Lbl.BackgroundTransparency = 1
     Lbl.Parent = NotifFrame
+    Lbl.ZIndex = 6001
     
     task.delay(1.5, function() NotifFrame:Destroy() end)
 end
@@ -385,14 +389,14 @@ MakeDraggable(Window, nil)
 
 ToggleBtn.MouseButton1Click:Connect(function() Window.Visible = not Window.Visible end)
 
--- POPUP SYSTEM
+-- POPUP SYSTEM (ZINDEX FIX)
 local PopupOverlay = Instance.new("Frame")
 PopupOverlay.Size = UDim2.new(1, 0, 1, 0)
 PopupOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
 PopupOverlay.BackgroundTransparency = 0.5
 PopupOverlay.Parent = Window
 PopupOverlay.Visible = false
-PopupOverlay.ZIndex = 500
+PopupOverlay.ZIndex = 2000 -- HIGH ZINDEX
 
 local function ClosePopup() 
     PopupOverlay.Visible = false 
@@ -404,12 +408,12 @@ local function ShowPopup(title, contentFunc)
     PopupOverlay.Visible = true
     
     local MainP = Instance.new("Frame")
-    MainP.Size = UDim2.new(0, 300, 0, 0) -- H will be set later
+    MainP.Size = UDim2.new(0, 300, 0, 0) 
     MainP.AnchorPoint = Vector2.new(0.5, 0.5)
     MainP.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainP.BackgroundColor3 = Theme.Popup
     MainP.Parent = PopupOverlay
-    MainP.ZIndex = 501 -- High ZIndex
+    MainP.ZIndex = 2001 -- Higher than Overlay
     createCorner(MainP, 10)
     createStroke(MainP, Theme.Accent)
     
@@ -421,7 +425,7 @@ local function ShowPopup(title, contentFunc)
     Title.TextSize = 16
     Title.BackgroundTransparency = 1
     Title.Parent = MainP
-    Title.ZIndex = 502
+    Title.ZIndex = 2002
     
     local Close = Instance.new("TextButton")
     Close.Size = UDim2.new(0, 30, 0, 30)
@@ -431,7 +435,7 @@ local function ShowPopup(title, contentFunc)
     Close.BackgroundTransparency = 1
     Close.Parent = MainP
     Close.Font = Enum.Font.GothamBold
-    Close.ZIndex = 502
+    Close.ZIndex = 2003
     Close.MouseButton1Click:Connect(ClosePopup)
     
     local Container = Instance.new("Frame")
@@ -439,7 +443,7 @@ local function ShowPopup(title, contentFunc)
     Container.Position = UDim2.new(0.05, 0, 0, 45)
     Container.BackgroundTransparency = 1
     Container.Parent = MainP
-    Container.ZIndex = 502
+    Container.ZIndex = 2002
     
     local contentHeight = contentFunc(Container)
     MainP.Size = UDim2.new(0, 300, 0, contentHeight + 55) 
@@ -578,7 +582,7 @@ GFrame.ScrollBarThickness = 4
 GFrame.ScrollingDirection = Enum.ScrollingDirection.Y
 GFrame.Parent = P_Guide
 
-local GText = [[WELCOME TO VELOX V133!
+local GText = [[WELCOME TO VELOX V134!
 
 [ FEATURES ]
 • Custom Layout: Resize & Move ANY button.
@@ -823,7 +827,6 @@ local SelectBtn = Instance.new("TextButton"); SelectBtn.Size=UDim2.new(0.9,0,0,3
 local SizeSlider = Instance.new("Frame"); SizeSlider.Size=UDim2.new(0.9,0,0,4); SizeSlider.Position=UDim2.new(0.05,0,0.5,0); SizeSlider.BackgroundColor3=Theme.Stroke; SizeSlider.Parent=AdvBox; createCorner(SizeSlider,2)
 local SizeKnob = Instance.new("TextButton"); SizeKnob.Size=UDim2.new(0,12,0,12); SizeKnob.Position=UDim2.new(0,-6,0.5,-6); SizeKnob.BackgroundColor3=Theme.Accent; SizeKnob.Text=""; SizeKnob.Parent=SizeSlider; SizeKnob.Selectable=false; createCorner(SizeKnob,6)
 local SizeLabel = Instance.new("TextLabel"); SizeLabel.Size=UDim2.new(1,0,0,15); SizeLabel.Position=UDim2.new(0,0,-4,0); SizeLabel.Text="SIZE: 0%"; SizeLabel.TextColor3=Theme.SubText; SizeLabel.Font=Enum.Font.Gotham; SizeLabel.TextSize=10; SizeLabel.BackgroundTransparency=1; SizeLabel.Parent=SizeSlider
--- FIX 3: Visibility Button Restored (Resizer only)
 local VisBtn = Instance.new("TextButton"); VisBtn.Size=UDim2.new(0.9,0,0,30); VisBtn.Position=UDim2.new(0.05,0,0.7,0); VisBtn.BackgroundColor3=Theme.Green; VisBtn.Text="VISIBLE: ON"; VisBtn.TextColor3=Theme.Bg; VisBtn.Font=Enum.Font.GothamBold; VisBtn.TextSize=11; VisBtn.Parent=AdvBox; createCorner(VisBtn,6); VisBtn.Visible=false 
 
 local ResizerIndex = 1
@@ -847,7 +850,7 @@ ResizerUpdateFunc = function()
     SelectBtn.Text = "SELECT: " .. item.Name
     CurrentSelectedElement = item 
     
-    -- SAFETY: Hide Visibility Button for Toggle Button to prevent softlock
+    -- SAFETY: Hide Visibility Button for Toggle Button
     if item.Name == "TOGGLE BTN" then
         VisBtn.Visible = false
     else
@@ -967,19 +970,19 @@ RefreshControlUI = function()
     end 
 end
 
--- === SYSTEM TAB (FIXED SAVE POPUP ZINDEX 510) ===
+-- === SYSTEM TAB (FIXED SAVE POPUP ZINDEX) ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
 local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function() 
     if CurrentConfigName then 
         ShowPopup("SAVE OPTIONS", function(c) 
-            local b1 = Instance.new("TextButton"); b1.Size=UDim2.new(0.9,0,0,35); b1.Position=UDim2.new(0.05,0,0,0); b1.BackgroundColor3=Theme.Bg; b1.Text="Overwrite '"..CurrentConfigName.."'"; b1.TextColor3=Theme.Accent; b1.Parent=c; createCorner(b1,6); b1.ZIndex=510;
+            local b1 = Instance.new("TextButton"); b1.Size=UDim2.new(0.9,0,0,35); b1.Position=UDim2.new(0.05,0,0,0); b1.BackgroundColor3=Theme.Bg; b1.Text="Overwrite '"..CurrentConfigName.."'"; b1.TextColor3=Theme.Accent; b1.Parent=c; createCorner(b1,6); b1.ZIndex=2004;
             b1.MouseButton1Click:Connect(function() SaveToFile(CurrentConfigName, GetCurrentState()); ClosePopup() end); 
-            local b2 = Instance.new("TextButton"); b2.Size=UDim2.new(0.9,0,0,35); b2.Position=UDim2.new(0.05,0,0,40); b2.BackgroundColor3=Theme.Bg; b2.Text="Save as New"; b2.TextColor3=Theme.Text; b2.Parent=c; createCorner(b2,6); b2.ZIndex=510;
+            local b2 = Instance.new("TextButton"); b2.Size=UDim2.new(0.9,0,0,35); b2.Position=UDim2.new(0.05,0,0,40); b2.BackgroundColor3=Theme.Bg; b2.Text="Save as New"; b2.TextColor3=Theme.Text; b2.Parent=c; createCorner(b2,6); b2.ZIndex=2004;
             b2.MouseButton1Click:Connect(function() 
                 ClosePopup(); 
                 ShowPopup("NEW CONFIG", function(c2) 
-                    local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c2; createCorner(box,6); box.ZIndex=510;
-                    local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c2; createCorner(confirm,6); confirm.ZIndex=510;
+                    local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c2; createCorner(box,6); box.ZIndex=2004;
+                    local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c2; createCorner(confirm,6); confirm.ZIndex=2004;
                     confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); ClosePopup() end end); 
                     return 100 -- Height
                 end) 
@@ -988,19 +991,19 @@ local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function()
         end) 
     else 
         ShowPopup("NEW CONFIG", function(c) 
-            local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c; createCorner(box,6); box.ZIndex=510;
-            local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c; createCorner(confirm,6); confirm.ZIndex=510;
+            local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c; createCorner(box,6); box.ZIndex=2004;
+            local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c; createCorner(confirm,6); confirm.ZIndex=2004;
             confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); ClosePopup() end end); 
             return 100 
         end) 
     end 
 end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
 
-local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=510; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local r = readfile(FileName); local all = HttpService:JSONDecode(r); for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=510; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=510; l.MouseButton1Click:Connect(function() LoadSpecific(name); ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=510; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=510; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=510; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local d = Instance.new("TextButton"); d.Size=UDim2.new(1,0,0,30); d.Position=UDim2.new(0,0,0,70); d.BackgroundColor3=Theme.Red; d.Text="DELETE"; d.TextColor3=Theme.Bg; d.Parent=c2; createCorner(d,6); d.ZIndex=510; d.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local r = readfile(FileName); local all = HttpService:JSONDecode(r); for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local d = Instance.new("TextButton"); d.Size=UDim2.new(1,0,0,30); d.Position=UDim2.new(0,0,0,70); d.BackgroundColor3=Theme.Red; d.Text="DELETE"; d.TextColor3=Theme.Bg; d.Parent=c2; createCorner(d,6); d.ZIndex=2004; d.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
 local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
     ShowPopup("CONFIRM RESET?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=510
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=510
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
         yes.MouseButton1Click:Connect(function()
             for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end; Combos = {}; 
             for _, vData in pairs(ActiveVirtualKeys) do vData.Button:Destroy() end; ActiveVirtualKeys = {}; 
@@ -1015,8 +1018,8 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
 end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
 local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
     ShowPopup("CONFIRM EXIT?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=510
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=510
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
         yes.MouseButton1Click:Connect(function() isRunning = false; ScreenGui:Destroy() end)
         no.MouseButton1Click:Connect(ClosePopup)
         return 50
