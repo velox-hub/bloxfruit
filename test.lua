@@ -1,9 +1,9 @@
 --[[
-    VELOX PRO SWITCHER (CLEAN LOGIC)
-    Fitur:
-    - Logic: Old Weapon (False) -> New Weapon (Equip) -> New Weapon (True).
-    - Mencegah skill bug/macet.
-    - Zero Delay execution.
+    VELOX V1: TRUE LOGIC (CORRECTED)
+    Logika:
+    1. Unequip senjata lama (Parent to Backpack) + Remote False.
+    2. Equip senjata baru (Parent to Character) + Remote True.
+    3. Skill: UI Fire Instant.
 ]]
 
 local Players = game:GetService("Players")
@@ -11,93 +11,75 @@ local CoreGui = game:GetService("CoreGui")
 local LP = Players.LocalPlayer
 local PlayerGui = LP:WaitForChild("PlayerGui")
 
--- 1. BERSIHKAN UI LAMA
-if CoreGui:FindFirstChild("VeloxProSwitch") then
-    CoreGui.VeloxProSwitch:Destroy()
+if CoreGui:FindFirstChild("VeloxV1") then
+    CoreGui.VeloxV1:Destroy()
 end
 
--- 2. GUI SETUP
+-- GUI SETUP
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "VeloxProSwitch"
+ScreenGui.Name = "VeloxV1"
 ScreenGui.Parent = CoreGui
 ScreenGui.ResetOnSpawn = false
 
 local MainFrame = Instance.new("Frame")
-MainFrame.Size = UDim2.new(0, 300, 0, 160)
-MainFrame.Position = UDim2.new(0.5, -150, 0.25, 0)
+MainFrame.Size = UDim2.new(0, 280, 0, 150)
+MainFrame.Position = UDim2.new(0.5, -140, 0.25, 0)
 MainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
 MainFrame.Active = true
 MainFrame.Draggable = true
 MainFrame.Parent = ScreenGui
 Instance.new("UICorner", MainFrame).CornerRadius = UDim.new(0, 10)
-Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(0, 255, 100) -- Hijau Pro
+Instance.new("UIStroke", MainFrame).Color = Color3.fromRGB(255, 255, 255)
 
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 25)
-Title.Text = "VELOX: PRO SWITCHER"
-Title.TextColor3 = Color3.fromRGB(0, 255, 100)
-Title.Font = Enum.Font.GothamBlack
-Title.BackgroundTransparency = 1
-Title.Parent = MainFrame
-
--- WADAH TOMBOL
+-- CONTAINER
 local SlotC = Instance.new("Frame"); SlotC.Size=UDim2.new(0.9,0,0.35,0); SlotC.Position=UDim2.new(0.05,0,0.2,0); SlotC.BackgroundTransparency=1; SlotC.Parent=MainFrame
 local SkillC = Instance.new("Frame"); SkillC.Size=UDim2.new(0.9,0,0.35,0); SkillC.Position=UDim2.new(0.05,0,0.6,0); SkillC.BackgroundTransparency=1; SkillC.Parent=MainFrame
 local G1 = Instance.new("UIGridLayout"); G1.CellSize=UDim2.new(0.22,0,1,0); G1.Parent=SlotC
 local G2 = Instance.new("UIGridLayout"); G2.CellSize=UDim2.new(0.18,0,1,0); G2.Parent=SkillC
 
 -- ==============================================================================
--- [LOGIKA INTI: FALSE -> TRUE]
+-- [LOGIKA V1 YANG BENAR]
 -- ==============================================================================
 
-local function SwitchTo(targetType)
+local function SwitchSlot(targetType)
     local Char = LP.Character
     local Backpack = LP.Backpack
-    local Humanoid = Char:FindFirstChild("Humanoid")
     
-    -- 1. MATIKAN SENJATA LAMA (FALSE)
-    -- Cek semua tool yang ada di Character saat ini
+    -- 1. BERSIHKAN TANGAN (Unequip Current)
     for _, tool in pairs(Char:GetChildren()) do
         if tool:IsA("Tool") then
-            -- Jika ini senjata yang sama dengan target, kita tidak perlu switch (biar gak glitch)
+            -- Jika kita sudah pegang senjata yg benar, cukup refresh remote
             if tool.ToolTip == targetType then
-                -- Pastikan dia True saja (Re-activate)
                 local re = tool:FindFirstChild("RemoteEvent")
                 if re then re:FireServer(true) end
-                return -- Selesai, karena sudah pegang
+                return 
             end
             
-            -- Jika ini senjata BEDA, matikan dulu remote-nya
+            -- Jika senjata lain: Matikan Remote & Masukkan ke Tas
             local re = tool:FindFirstChild("RemoteEvent")
-            if re then
-                re:FireServer(false) -- MATIKAN SIGNAL LAMA
-            end
+            if re then re:FireServer(false) end
             
-            -- Pindahkan ke backpack (Unequip manual script biar bersih)
-            tool.Parent = Backpack
+            tool.Parent = Backpack -- INI ADALAH CARA 'UNEQUIP' MANUAL YG BENAR
         end
     end
 
-    -- 2. AKTIFKAN SENJATA BARU (TRUE)
-    -- Cari senjata target di Backpack
+    -- 2. AMBIL DARI TAS (Equip New)
     for _, tool in pairs(Backpack:GetChildren()) do
         if tool:IsA("Tool") and tool.ToolTip == targetType then
             
-            -- Equip Fisik
-            Humanoid:EquipTool(tool)
+            tool.Parent = Char -- INI ADALAH CARA 'EQUIP' MANUAL YG BENAR
             
-            -- NYALAKAN SIGNAL BARU
+            -- Nyalakan Remote
             local re = tool:FindFirstChild("RemoteEvent")
-            if re then
-                re:FireServer(true) -- HIDUPKAN SIGNAL BARU
-            end
+            if re then re:FireServer(true) end
+            
             return
         end
     end
 end
 
--- FUNGSI SKILL (INSTANT UI FIRE)
-local function InstantSkill(key)
+-- LOGIKA SKILL (UI BUTTON FIRE - PALING STABIL)
+local function UseSkill(key)
     local Main = PlayerGui:FindFirstChild("Main")
     local Skills = Main and Main:FindFirstChild("Skills")
     if Skills then
@@ -105,9 +87,8 @@ local function InstantSkill(key)
             if w:IsA("Frame") and w.Visible then
                 local b = w:FindFirstChild(key) and w[key]:FindFirstChild("Mobile")
                 if b then
-                    local cons = getconnections(b.Activated)
-                    if #cons == 0 then cons = getconnections(b.MouseButton1Click) end
-                    for _, c in pairs(cons) do c:Fire() end
+                    for _, c in pairs(getconnections(b.Activated)) do c:Fire() end
+                    for _, c in pairs(getconnections(b.MouseButton1Click)) do c:Fire() end
                     return
                 end
             end
@@ -116,7 +97,7 @@ local function InstantSkill(key)
 end
 
 -- ==============================================================================
--- [UI BUILDER]
+-- [TOMBOL]
 -- ==============================================================================
 
 local function MakeBtn(text, color, parent, cb)
@@ -128,32 +109,26 @@ local function MakeBtn(text, color, parent, cb)
     b.Parent = parent
     Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
     
-    b.MouseButton1Down:Connect(function() -- Responsif Instant
+    b.MouseButton1Down:Connect(function()
         cb()
-        -- Visual Effect
-        task.spawn(function()
-            b.BackgroundColor3 = color; b.TextColor3 = Color3.fromRGB(10,10,10)
-            task.wait(0.05)
-            b.BackgroundColor3 = Color3.fromRGB(30,30,35); b.TextColor3 = color
-        end)
+        b.BackgroundColor3 = color; b.TextColor3 = Color3.fromRGB(10,10,10)
+        task.wait(0.05)
+        b.BackgroundColor3 = Color3.fromRGB(30,30,35); b.TextColor3 = color
     end)
 end
 
--- SLOT BUTTONS (Kuning)
-MakeBtn("1", Color3.fromRGB(255, 220, 0), SlotC, function() SwitchTo("Melee") end)
-MakeBtn("2", Color3.fromRGB(255, 220, 0), SlotC, function() SwitchTo("Blox Fruit") end)
-MakeBtn("3", Color3.fromRGB(255, 220, 0), SlotC, function() SwitchTo("Sword") end)
-MakeBtn("4", Color3.fromRGB(255, 220, 0), SlotC, function() SwitchTo("Gun") end)
+-- 1-4
+MakeBtn("1", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Melee") end)
+MakeBtn("2", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Blox Fruit") end)
+MakeBtn("3", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Sword") end)
+MakeBtn("4", Color3.fromRGB(255, 200, 0), SlotC, function() SwitchSlot("Gun") end)
 
--- SKILL BUTTONS (Cyan)
-local keys = {"Z", "X", "C", "V", "F"}
-for _, k in ipairs(keys) do
-    MakeBtn(k, Color3.fromRGB(0, 255, 255), SkillC, function() InstantSkill(k) end)
+-- Z-F
+local k = {"Z","X","C","V","F"}
+for _, key in ipairs(k) do
+    MakeBtn(key, Color3.fromRGB(0, 200, 255), SkillC, function() UseSkill(key) end)
 end
 
--- CLOSE
-local Close = Instance.new("TextButton")
-Close.Text = "X"; Close.Size = UDim2.new(0, 25, 0, 25); Close.Position = UDim2.new(1, -30, 0, 0)
-Close.BackgroundTransparency = 1; Close.TextColor3 = Color3.fromRGB(255, 50, 50)
-Close.Parent = MainFrame
-Close.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
+-- Close
+local C = Instance.new("TextButton"); C.Text="X"; C.Parent=MainFrame; C.Size=UDim2.new(0,20,0,20); C.Position=UDim2.new(1,-25,0,0); C.BackgroundTransparency=1; C.TextColor3=Color3.new(1,0,0)
+C.MouseButton1Click:Connect(function() ScreenGui:Destroy() end)
