@@ -1,17 +1,18 @@
 -- ==============================================================================
--- [ VELOX V2.0 - JUMP BUTTON & TOUCH FIX ]
--- Fix: Jump Button now uses correct Path & Touch Input Type
--- Fix: Weapon 1-4 Toggles (Equip/Unequip)
--- Added: Dodge, Ken, Race, Soru Context Buttons
+-- [ VELOX V2.1 - TAP CENTER & JUMP FIX ]
+-- Removed: Soru & Haki
+-- Changed: Jump uses Direct Humanoid (No UI Touch Glitch)
+-- Added: TAP Button (Clicks Center of Screen)
 -- ==============================================================================
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 -- UI CONFIGURATION
 local Theme = {
@@ -38,80 +39,70 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [1] UTILITY: FIRE UI (UPDATED FOR TOUCH)
+-- [1] UTILITY: UI & INPUT
 -- ==============================================================================
 
+-- Fungsi Klik UI Silent (Untuk Skill Z-F & Context)
 local function FireUI(btn)
     if not btn then return end
-    
-    -- 1. Coba Activated (Standard)
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
-    
-    -- 2. Coba MouseClick (Standard)
     for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
-    
-    -- 3. Coba InputBegan dengan Tipe TOUCH (PENTING UNTUK JUMP BUTTON)
     for _, c in pairs(getconnections(btn.InputBegan)) do 
-        -- Kirim sinyal Touch
-        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.Begin})
-        
-        -- Kirim sinyal Mouse (Backup)
         c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin})
-        
         task.wait()
-        
-        -- End Input
-        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.End})
         c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.End})
     end
 end
 
+-- Fungsi Klik Tengah Layar (TAP)
+local function ClickCenterScreen()
+    local viewport = Camera.ViewportSize
+    local x, y = viewport.X / 2, viewport.Y / 2
+    
+    -- Kirim Input Klik ke Tengah Layar
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, true, game, 1)
+    task.wait(0.05)
+    VirtualInputManager:SendMouseButtonEvent(x, y, 0, false, game, 1)
+end
+
 -- ==============================================================================
--- [2] CORE LOGIC: EQUIP (TOGGLE)
+-- [2] CORE LOGIC
 -- ==============================================================================
 
+-- EQUIP WEAPON (TOGGLE LOGIC)
 local function EquipWeapon(slotIdx)
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChild("Humanoid")
-    if not hum then return end
-
-    local targetInfo = WeaponData[slotIdx]
-    if not targetInfo then return end
+    local char = LocalPlayer.Character; if not char then return end
+    local hum = char:FindFirstChild("Humanoid"); if not hum then return end
+    local targetInfo = WeaponData[slotIdx]; if not targetInfo then return end
 
     local currentTool = char:FindFirstChildOfClass("Tool")
     
-    -- LOGIKA TOGGLE: Jika sudah pegang -> Unequip. Jika belum -> Equip.
     if currentTool and currentTool.ToolTip == targetInfo.tooltip then
-        hum:UnequipTools()
+        hum:UnequipTools() -- Lepas jika sudah pakai
     else
         local foundTool = nil
         for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if t:IsA("Tool") and t.ToolTip == targetInfo.tooltip then
-                foundTool = t
-                break
-            end
+            if t:IsA("Tool") and t.ToolTip == targetInfo.tooltip then foundTool = t; break end
         end
-        
-        if foundTool then
-            hum:EquipTool(foundTool)
+        if foundTool then hum:EquipTool(foundTool)
         else
-            -- Fallback
             for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-                if t:IsA("Tool") and (t.Name == targetInfo.type or t.Name:find(targetInfo.type)) then
-                    hum:EquipTool(t)
-                    break
-                end
+                if t:IsA("Tool") and (t.Name == targetInfo.type or t.Name:find(targetInfo.type)) then hum:EquipTool(t); break end
             end
         end
     end
 end
 
--- ==============================================================================
--- [3] CORE LOGIC: SKILLS & JUMP
--- ==============================================================================
+-- JUMP (HUMANOID LOGIC)
+local function DoJump()
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.Jump = true
+        -- Ubah state agar bisa skyjump (Geppo)
+        LocalPlayer.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end
 
--- TRIGGER MAIN SKILL (Z-F)
+-- TRIGGER SKILL (UI PATH)
 local function TriggerMainSkill(key)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local SkillsFrame = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
@@ -120,8 +111,7 @@ local function TriggerMainSkill(key)
             if toolFrame:IsA("Frame") and toolFrame.Visible then
                 local keyFrame = toolFrame:FindFirstChild(key)
                 if keyFrame then
-                    local btn = keyFrame:FindFirstChild("Mobile") or keyFrame
-                    FireUI(btn)
+                    FireUI(keyFrame:FindFirstChild("Mobile") or keyFrame)
                     return
                 end
             end
@@ -129,7 +119,7 @@ local function TriggerMainSkill(key)
     end
 end
 
--- TRIGGER CONTEXT (Dodge, Ken, Race, Soru)
+-- TRIGGER CONTEXT (Dodge, Ken, Race)
 local function TriggerContext(keyword)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local CtxFrame = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
@@ -143,27 +133,8 @@ local function TriggerContext(keyword)
     end
 end
 
--- TRIGGER JUMP (FIXED PATH)
-local function TriggerJump()
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not PGui then return end
-
-    -- Path: game.Players.LocalPlayer.PlayerGui.TouchGui.TouchControlFrame.JumpButton
-    local TouchGui = PGui:FindFirstChild("TouchGui")
-    if TouchGui then
-        local TouchControl = TouchGui:FindFirstChild("TouchControlFrame")
-        if TouchControl then
-            local JumpBtn = TouchControl:FindFirstChild("JumpButton")
-            if JumpBtn then
-                FireUI(JumpBtn) -- Klik tombol UI asli
-                return
-            end
-        end
-    end
-end
-
 -- ==============================================================================
--- [4] UI SYSTEM
+-- [3] UI SYSTEM
 -- ==============================================================================
 
 local function createCorner(p, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r); c.Parent = p end
@@ -211,6 +182,7 @@ local function AddBtn(id, text, callback, size, color)
     btn.Parent = ScreenGui
     createCorner(btn, 10); createStroke(btn, Theme.Accent)
     
+    -- Efek Klik Simple
     btn.MouseButton1Click:Connect(function()
         btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Bg; callback()
         task.delay(0.1, function() btn.BackgroundColor3 = color or Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent end)
@@ -222,7 +194,7 @@ local function AddBtn(id, text, callback, size, color)
 end
 
 -- ==============================================================================
--- [5] SETUP BUTTONS (LAYOUT)
+-- [4] BUTTON LAYOUT
 -- ==============================================================================
 
 -- [ROW 1] Weapons (Toggle)
@@ -231,22 +203,23 @@ AddBtn("2", "2", function() EquipWeapon(2) end).Position = UDim2.new(0.75, 0, 0.
 AddBtn("3", "3", function() EquipWeapon(3) end).Position = UDim2.new(0.85, 0, 0.45, 0)
 AddBtn("4", "4", function() EquipWeapon(4) end).Position = UDim2.new(0.95, 0, 0.45, 0)
 
--- [ROW 2] Main Skills
+-- [ROW 2] Skills
 AddBtn("Z", "Z", function() TriggerMainSkill("Z") end).Position = UDim2.new(0.65, 0, 0.55, 0)
 AddBtn("X", "X", function() TriggerMainSkill("X") end).Position = UDim2.new(0.75, 0, 0.55, 0)
 AddBtn("C", "C", function() TriggerMainSkill("C") end).Position = UDim2.new(0.85, 0, 0.55, 0)
 AddBtn("V", "V", function() TriggerMainSkill("V") end).Position = UDim2.new(0.70, 0, 0.65, 0)
 AddBtn("F", "F", function() TriggerMainSkill("F") end).Position = UDim2.new(0.80, 0, 0.65, 0)
 
--- [ROW 3] Special & Context
-AddBtn("Buso", "HAKI", function() ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso") end).Position = UDim2.new(0.60, 0, 0.35, 0)
-AddBtn("Ken", "KEN", function() TriggerContext("Ken") end).Position = UDim2.new(0.70, 0, 0.35, 0)
-AddBtn("Race", "RACE", function() TriggerContext("RaceAbility") end).Position = UDim2.new(0.80, 0, 0.35, 0)
-AddBtn("Soru", "SORU", function() TriggerContext("Soru") end).Position = UDim2.new(0.50, 0, 0.65, 0)
-AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim2.new(0.90, 0, 0.35, 0)
+-- [ROW 3] Context (No Soru/Haki)
+AddBtn("Ken", "KEN", function() TriggerContext("Ken") end).Position = UDim2.new(0.60, 0, 0.35, 0)
+AddBtn("Race", "RACE", function() TriggerContext("RaceAbility") end).Position = UDim2.new(0.70, 0, 0.35, 0)
+AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim2.new(0.80, 0, 0.35, 0)
 
 -- [ROW 4] Actions
-local bJump = AddBtn("Jump", "JUMP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
-bJump.Position = UDim2.new(0.90, 0, 0.70, 0)
+local bJump = AddBtn("Jump", "JUMP", DoJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
+bJump.Position = UDim2.new(0.90, 0, 0.65, 0) -- Area jempol bawah
 
-print("Velox v2.0 Loaded: Jump Touch Fix")
+local bTap = AddBtn("Tap", "TAP", ClickCenterScreen, UDim2.new(0, 60, 0, 60), Theme.Red)
+bTap.Position = UDim2.new(0.90, 0, 0.25, 0) -- Area jempol atas
+
+print("Velox v2.1 Loaded: Tap Center & Direct Jump")
