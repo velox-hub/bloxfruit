@@ -1289,7 +1289,7 @@ local function GetCurrentState()
         Pos_Joy = getLayout(JoyContainer),
         Pos_JoyOuter = getLayout(JoyOuter),
         Combos = {},
-        VirtualKeys = {}
+        VirtualKeys = {},
         M1_OffsetX = M1_Offset.X,
         M1_OffsetY = M1_Offset.Y
     }
@@ -1343,7 +1343,7 @@ local function LoadSpecific(configName)
     if data.M1_OffsetX and data.M1_OffsetY then
         M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
     end
-    
+
     GlobalTransparency = data.Transparency or 0
     TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
     UpdateTransparencyFunc()
