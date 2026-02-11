@@ -1,7 +1,3 @@
-apakah adaa kesalahan di script ini ataus udah benar, atau ada sara untuk dihapus atau ditambahkan atau diganti
-
-
-
 -- ==============================================================================
 
 -- [ VELOX V1.4 - MOBILE NATIVE INPUT ]
