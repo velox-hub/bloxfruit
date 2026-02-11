@@ -1,8 +1,7 @@
 -- ==============================================================================
--- [ VELOX V2.3 - MULTI-TOUCH FIX ]
--- Fix M1: Uses Virtual Touch Event (ID 5) at Center Screen (No Visuals, No Interrupt)
--- Fix Jump: Clicks exact UI Coordinates of JumpButton (Touch ID 6)
--- Fix Equip: Toggle Logic (1-4)
+-- [ VELOX V2.4 - CORE EDITION ]
+-- Features: 1-4 Toggle, Z-F Skills, M1 Tap, Dodge, Jump UI
+-- Optimized: Multi-Touch (No Joystick Interruption)
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -10,7 +9,6 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
@@ -19,7 +17,7 @@ local Camera = workspace.CurrentCamera
 local Theme = {
     Bg      = Color3.fromRGB(20, 20, 25),
     Sidebar = Color3.fromRGB(30, 30, 35),
-    Accent  = Color3.fromRGB(0, 255, 180),
+    Accent  = Color3.fromRGB(0, 255, 180), -- Teal Green
     Text    = Color3.fromRGB(240, 240, 240),
     Red     = Color3.fromRGB(255, 80, 80),
     Blue    = Color3.fromRGB(50, 150, 255),
@@ -31,7 +29,7 @@ local ActiveVirtualKeys = {}
 local ScreenGui = nil
 local IsLayoutLocked = false
 
--- DATA SENJATA
+-- DATA SENJATA (ToolTip Based)
 local WeaponData = {
     [1] = {type = "Melee", tooltip = "Melee"},
     [2] = {type = "Fruit", tooltip = "Blox Fruit"},
@@ -40,17 +38,13 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [1] UTILITY: VIRTUAL TOUCH (THE FIX)
+-- [1] UTILITY: MULTI-TOUCH SIMULATOR
 -- ==============================================================================
 
--- Fungsi ini mensimulasikan sentuhan jari pada koordinat X, Y
--- touchID: Angka unik untuk membedakan jari (Joystick biasanya ID 0 atau 1)
--- Kita pakai ID 5 dan 6 agar tidak bentrok.
-local function SimulateTouch(touchID, x, y)
-    -- State: 0 = Begin (Tekan), 2 = End (Lepas)
-    VirtualInputManager:SendTouchEvent(touchID, 0, x, y)
-    task.wait(0.05)
-    VirtualInputManager:SendTouchEvent(touchID, 2, x, y)
+local function MultiTouch(id, x, y)
+    VirtualInputManager:SendTouchEvent(id, 0, x, y) -- Begin
+    task.wait(0.02)
+    VirtualInputManager:SendTouchEvent(id, 2, x, y) -- End
 end
 
 local function FireUI(btn)
@@ -63,103 +57,75 @@ end
 -- [2] CORE LOGIC
 -- ==============================================================================
 
--- [A] M1 TAP CENTER (INVISIBLE TOUCH)
-local function TapCenterScreen()
-    local viewport = Camera.ViewportSize
-    local x, y = viewport.X / 2, viewport.Y / 2
-    
-    -- Gunakan Touch ID 5 (Jari ke-5)
-    -- Ini tidak akan mengganggu Joystick (Jari ke-1)
-    SimulateTouch(5, x, y)
-end
-
--- [B] JUMP VIA UI COORDINATES
-local function TriggerJumpUI()
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not PGui then return end
-    
-    local TouchGui = PGui:FindFirstChild("TouchGui")
-    if TouchGui then
-        local TouchControl = TouchGui:FindFirstChild("TouchControlFrame")
-        if TouchControl then
-            local JumpBtn = TouchControl:FindFirstChild("JumpButton")
-            if JumpBtn and JumpBtn.Visible then
-                -- Ambil Posisi Tombol di Layar
-                local absPos = JumpBtn.AbsolutePosition
-                local absSize = JumpBtn.AbsoluteSize
-                
-                -- Hitung titik tengah tombol
-                local centerX = absPos.X + (absSize.X / 2)
-                local centerY = absPos.Y + (absSize.Y / 2)
-                
-                -- Sentuh koordinat tombol tersebut dengan Touch ID 6
-                SimulateTouch(6, centerX, centerY)
-                return
-            end
-        end
-    end
-    
-    -- Fallback jika UI tidak ketemu (misal main di PC mode tapi pakai script HP)
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-        LocalPlayer.Character.Humanoid.Jump = true
-    end
-end
-
--- [C] EQUIP WEAPON (TOGGLE)
-local function EquipWeapon(slotIdx)
+-- [A] TOGGLE EQUIP (1-4)
+local function EquipToggle(slotIdx)
     local char = LocalPlayer.Character; if not char then return end
     local hum = char:FindFirstChild("Humanoid"); if not hum then return end
-    local targetInfo = WeaponData[slotIdx]; if not targetInfo then return end
-
-    local currentTool = char:FindFirstChildOfClass("Tool")
-    if currentTool and currentTool.ToolTip == targetInfo.tooltip then
+    local info = WeaponData[slotIdx]
+    
+    local current = char:FindFirstChildOfClass("Tool")
+    if current and current.ToolTip == info.tooltip then
         hum:UnequipTools()
     else
-        local foundTool = nil
+        local found = nil
         for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if t:IsA("Tool") and t.ToolTip == targetInfo.tooltip then foundTool = t; break end
+            if t:IsA("Tool") and t.ToolTip == info.tooltip then found = t; break end
         end
-        if foundTool then hum:EquipTool(foundTool)
-        else
-            for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-                if t:IsA("Tool") and (t.Name == targetInfo.type or t.Name:find(targetInfo.type)) then hum:EquipTool(t); break end
+        if found then hum:EquipTool(found) end
+    end
+end
+
+-- [B] SKILLS (Z-F)
+local function UseSkill(key)
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local Frame = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
+    if Frame then
+        for _, tool in pairs(Frame:GetChildren()) do
+            if tool:IsA("Frame") and tool.Visible then
+                local kFrame = tool:FindFirstChild(key)
+                if kFrame then FireUI(kFrame:FindFirstChild("Mobile") or kFrame) return end
             end
         end
     end
 end
 
--- [D] SKILL & CONTEXT TRIGGERS
-local function TriggerMainSkill(key)
+-- [C] DODGE (CONTEXT BUTTON)
+local function TriggerDodge()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local SkillsFrame = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
-    if SkillsFrame then
-        for _, toolFrame in pairs(SkillsFrame:GetChildren()) do
-            if toolFrame:IsA("Frame") and toolFrame.Visible then
-                local keyFrame = toolFrame:FindFirstChild(key)
-                if keyFrame then
-                    FireUI(keyFrame:FindFirstChild("Mobile") or keyFrame)
-                    return
-                end
-            end
+    local Ctx = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
+    if Ctx then
+        local Dodge = Ctx:FindFirstChild("BoundActionDodge")
+        if Dodge and Dodge:FindFirstChild("Button") then
+            FireUI(Dodge.Button)
         end
     end
 end
 
-local function TriggerContext(keyword)
+-- [D] JUMP (UI COORDINATE TOUCH)
+local function TriggerJump()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local CtxFrame = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
-    if CtxFrame then
-        for _, frame in pairs(CtxFrame:GetChildren()) do
-            if frame.Name:find("BoundAction") and frame.Name:find(keyword) then
-                FireUI(frame:FindFirstChild("Button"))
-                return
-            end
+    local JumpBtn = PGui and PGui:FindFirstChild("TouchGui") and PGui.TouchGui:FindFirstChild("TouchControlFrame") and PGui.TouchGui.TouchControlFrame:FindFirstChild("JumpButton")
+    
+    if JumpBtn and JumpBtn.Visible then
+        local pos = JumpBtn.AbsolutePosition
+        local size = JumpBtn.AbsoluteSize
+        MultiTouch(10, pos.X + (size.X/2), pos.Y + (size.Y/2))
+    else
+        -- Fallback Humanoid
+        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+            LocalPlayer.Character.Humanoid.Jump = true
         end
     end
+end
+
+-- [E] M1 (CENTER SCREEN TOUCH)
+local function TapM1()
+    local view = Camera.ViewportSize
+    MultiTouch(11, view.X / 2, view.Y / 2)
 end
 
 -- ==============================================================================
--- [3] UI SYSTEM
+-- [3] UI CONSTRUCTION
 -- ==============================================================================
 
 local function createCorner(p, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r); c.Parent = p end
@@ -187,63 +153,49 @@ end
 if CoreGui:FindFirstChild("VeloxUI") then CoreGui.VeloxUI:Destroy() end
 ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxUI"; ScreenGui.Parent = CoreGui; ScreenGui.ResetOnSpawn = false
 
--- TOGGLE BTN
-local ToggleBtn = Instance.new("TextButton"); ToggleBtn.Size = UDim2.new(0, 45, 0, 45); ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0); ToggleBtn.BackgroundColor3 = Theme.Sidebar; ToggleBtn.Text = "V"; ToggleBtn.TextColor3 = Theme.Accent; ToggleBtn.Parent = ScreenGui; createCorner(ToggleBtn, 12); createStroke(ToggleBtn, Theme.Accent)
-local Vis = true
-ToggleBtn.MouseButton1Click:Connect(function() Vis = not Vis; for _, v in pairs(ActiveVirtualKeys) do v.Button.Visible = Vis end end)
-MakeDraggable(ToggleBtn)
-
 local function AddBtn(id, text, callback, size, color)
-    if ActiveVirtualKeys[id] then ActiveVirtualKeys[id].Button:Destroy() end
     local btn = Instance.new("TextButton")
     btn.Size = size or UDim2.new(0, 50, 0, 50)
-    btn.Position = UDim2.new(0.5, 0, 0.5, 0)
     btn.BackgroundColor3 = color or Color3.fromRGB(0, 0, 0)
     btn.BackgroundTransparency = 0.2
     btn.Text = text
     btn.TextColor3 = Theme.Accent
     btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
+    btn.TextSize = 16
     btn.Parent = ScreenGui
-    createCorner(btn, 10); createStroke(btn, Theme.Accent)
-    
+    createCorner(btn, 12); createStroke(btn, Theme.Accent)
     btn.MouseButton1Click:Connect(function()
         btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Bg; callback()
         task.delay(0.1, function() btn.BackgroundColor3 = color or Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent end)
     end)
-    
-    MakeDraggable(btn)
-    ActiveVirtualKeys[id] = {Button = btn}
+    MakeDraggable(btn); ActiveVirtualKeys[id] = {Button = btn}
     return btn
 end
 
 -- ==============================================================================
--- [4] BUTTON LAYOUT
+-- [4] FINAL LAYOUT
 -- ==============================================================================
 
--- [ROW 1] Weapons
-AddBtn("1", "1", function() EquipWeapon(1) end).Position = UDim2.new(0.65, 0, 0.45, 0)
-AddBtn("2", "2", function() EquipWeapon(2) end).Position = UDim2.new(0.75, 0, 0.45, 0)
-AddBtn("3", "3", function() EquipWeapon(3) end).Position = UDim2.new(0.85, 0, 0.45, 0)
-AddBtn("4", "4", function() EquipWeapon(4) end).Position = UDim2.new(0.95, 0, 0.45, 0)
+-- Weapons
+AddBtn("1", "1", function() EquipToggle(1) end).Position = UDim2.new(0.6, 0, 0.45, 0)
+AddBtn("2", "2", function() EquipToggle(2) end).Position = UDim2.new(0.7, 0, 0.45, 0)
+AddBtn("3", "3", function() EquipToggle(3) end).Position = UDim2.new(0.8, 0, 0.45, 0)
+AddBtn("4", "4", function() EquipToggle(4) end).Position = UDim2.new(0.9, 0, 0.45, 0)
 
--- [ROW 2] Skills
-AddBtn("Z", "Z", function() TriggerMainSkill("Z") end).Position = UDim2.new(0.65, 0, 0.55, 0)
-AddBtn("X", "X", function() TriggerMainSkill("X") end).Position = UDim2.new(0.75, 0, 0.55, 0)
-AddBtn("C", "C", function() TriggerMainSkill("C") end).Position = UDim2.new(0.85, 0, 0.55, 0)
-AddBtn("V", "V", function() TriggerMainSkill("V") end).Position = UDim2.new(0.70, 0, 0.65, 0)
-AddBtn("F", "F", function() TriggerMainSkill("F") end).Position = UDim2.new(0.80, 0, 0.65, 0)
+-- Skills
+AddBtn("Z", "Z", function() UseSkill("Z") end).Position = UDim2.new(0.6, 0, 0.55, 0)
+AddBtn("X", "X", function() UseSkill("X") end).Position = UDim2.new(0.7, 0, 0.55, 0)
+AddBtn("C", "C", function() UseSkill("C") end).Position = UDim2.new(0.8, 0, 0.55, 0)
+AddBtn("V", "V", function() UseSkill("V") end).Position = UDim2.new(0.65, 0, 0.65, 0)
+AddBtn("F", "F", function() UseSkill("F") end).Position = UDim2.new(0.75, 0, 0.65, 0)
 
--- [ROW 3] Context
-AddBtn("Ken", "KEN", function() TriggerContext("Ken") end).Position = UDim2.new(0.60, 0, 0.35, 0)
-AddBtn("Race", "RACE", function() TriggerContext("RaceAbility") end).Position = UDim2.new(0.70, 0, 0.35, 0)
-AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim2.new(0.80, 0, 0.35, 0)
+-- Actions
+local m1 = AddBtn("M1", "M1", TapM1, UDim2.new(0, 60, 0, 60), Theme.Red)
+m1.Position = UDim2.new(0.9, 0, 0.25, 0)
 
--- [ROW 4] Actions
-local bJump = AddBtn("Jump", "JUMP", TriggerJumpUI, UDim2.new(0, 60, 0, 60), Theme.Blue)
-bJump.Position = UDim2.new(0.90, 0, 0.65, 0)
+AddBtn("Dodge", "DG", TriggerDodge).Position = UDim2.new(0.85, 0, 0.65, 0)
 
-local bTap = AddBtn("Tap", "TAP", TapCenterScreen, UDim2.new(0, 60, 0, 60), Theme.Red)
-bTap.Position = UDim2.new(0.90, 0, 0.25, 0)
+local jmp = AddBtn("Jump", "JP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
+jmp.Position = UDim2.new(0.9, 0, 0.7, 0)
 
-print("Velox v2.3 Loaded: Multi-Touch Enabled")
+print("Velox v2.4 Loaded")
