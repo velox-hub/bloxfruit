@@ -1,7 +1,8 @@
 -- ==============================================================================
--- [ VELOX V1.7 - STABLE EQUIP & FULL MOBILE SUPPORT ]
--- Fix: Weapon 1-4 Spam Consistency (No random switching)
--- Features: Silent Skills, Remote M1, Auto-Ken/Race/Soru/Jump
+-- [ VELOX V1.8 - TOGGLE EQUIP & DODGE ADDED ]
+-- Fix: Weapon 1-4 now Toggles (Equip/Unequip)
+-- Change: Jump uses Humanoid, M1 Removed
+-- Added: Dodge Button
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -27,9 +28,8 @@ local Theme = {
 local ActiveVirtualKeys = {} 
 local ScreenGui = nil
 local IsLayoutLocked = false
-local M1Loop = nil 
 
--- DATA SENJATA (Strict Matching)
+-- DATA SENJATA
 local WeaponData = {
     [1] = {type = "Melee", tooltip = "Melee"},
     [2] = {type = "Fruit", tooltip = "Blox Fruit"},
@@ -38,7 +38,7 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [1] CORE LOGIC: EQUIP WEAPON (FIXED)
+-- [1] CORE LOGIC: EQUIP/UNEQUIP (TOGGLE)
 -- ==============================================================================
 
 local function EquipWeapon(slotIdx)
@@ -50,36 +50,32 @@ local function EquipWeapon(slotIdx)
     local targetInfo = WeaponData[slotIdx]
     if not targetInfo then return end
 
-    -- [STEP 1] CEK APAKAH SUDAH MEMEGANG SENJATA YANG BENAR?
-    -- Jika sudah pegang, JANGAN lakukan apa-apa (Mencegah unequip/glitch saat spam)
+    -- Cek senjata yang sedang dipegang
     local currentTool = char:FindFirstChildOfClass("Tool")
-    if currentTool then
-        if currentTool.ToolTip == targetInfo.tooltip then
-            return -- Sudah benar, diam saja.
-        end
-    end
-
-    -- [STEP 2] CARI DI BACKPACK (HANYA YANG SESUAI TOOLTIP)
-    -- Kita tidak pakai index [1], [2] karena urutan backpack bisa acak.
-    -- Kita cari spesifik ToolTip-nya.
-    local foundTool = nil
-    for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-        if t:IsA("Tool") and t.ToolTip == targetInfo.tooltip then
-            foundTool = t
-            break
-        end
-    end
-
-    -- [STEP 3] EKSEKUSI
-    if foundTool then
-        hum:EquipTool(foundTool)
+    
+    -- LOGIKA TOGGLE:
+    -- Jika senjata di tangan SAMA dengan tombol yang ditekan -> UNEQUIP
+    if currentTool and currentTool.ToolTip == targetInfo.tooltip then
+        hum:UnequipTools()
     else
-        -- Fallback: Kadang Blox Fruit punya nama tool aneh, kita coba match nama tipe
-        -- (Hanya jalan jika ToolTip method gagal)
+        -- Jika BEDA atau KOSONG -> EQUIP senjata tersebut dari Backpack
+        local foundTool = nil
         for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if t:IsA("Tool") and (t.Name == targetInfo.type or t.Name:find(targetInfo.type)) then
-                hum:EquipTool(t)
+            if t:IsA("Tool") and t.ToolTip == targetInfo.tooltip then
+                foundTool = t
                 break
+            end
+        end
+        
+        if foundTool then
+            hum:EquipTool(foundTool)
+        else
+            -- Fallback jika tooltip tidak terbaca, cari berdasarkan nama tipe
+            for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
+                if t:IsA("Tool") and (t.Name == targetInfo.type or t.Name:find(targetInfo.type)) then
+                    hum:EquipTool(t)
+                    break
+                end
             end
         end
     end
@@ -93,6 +89,7 @@ local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
     for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
+    -- Fallback input for touch interfaces
     for _, c in pairs(getconnections(btn.InputBegan)) do 
         c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin})
         task.wait()
@@ -119,7 +116,8 @@ local function TriggerMainSkill(key)
     end
 end
 
--- TRIGGER CONTEXT (Ken, Race, Soru)
+-- TRIGGER CONTEXT (Dodge, Ken, Race, Soru)
+-- Mencari tombol di MobileContextButtons -> ContextButtonFrame
 local function TriggerContext(keyword)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local CtxFrame = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
@@ -133,29 +131,10 @@ local function TriggerContext(keyword)
     end
 end
 
--- TRIGGER JUMP (TouchGui)
+-- TRIGGER JUMP (Direct Humanoid)
 local function TriggerJump()
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local Btn = PGui and PGui:FindFirstChild("TouchGui") and PGui.TouchGui:FindFirstChild("TouchControlFrame") and PGui.TouchGui.TouchControlFrame:FindFirstChild("JumpButton")
-    if Btn then FireUI(Btn) else 
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then LocalPlayer.Character.Humanoid.Jump = true end 
-    end
-end
-
--- ATTACK M1 (REMOTE)
-local function DoAttackM1()
-    local char = LocalPlayer.Character; if not char then return end
-    local tool = char:FindFirstChildOfClass("Tool")
-    
-    if tool and (tool.ToolTip == "Melee" or tool.ToolTip == "Sword") then
-        local remote = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net") and ReplicatedStorage.Modules.Net:FindFirstChild("RE/RegisterAttack")
-        if remote then remote:FireServer(0.4) end
-    elseif tool then
-        tool:Activate()
-    else
-        -- Tetap kirim attack walau tool belum load sempurna (Combat)
-        local remote = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net") and ReplicatedStorage.Modules.Net:FindFirstChild("RE/RegisterAttack")
-        if remote then remote:FireServer(0.4) end
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then 
+        LocalPlayer.Character.Humanoid.Jump = true 
     end
 end
 
@@ -194,7 +173,7 @@ local Vis = true
 ToggleBtn.MouseButton1Click:Connect(function() Vis = not Vis; for _, v in pairs(ActiveVirtualKeys) do v.Button.Visible = Vis end end)
 MakeDraggable(ToggleBtn)
 
-local function AddBtn(id, text, callback, isHold, size, color)
+local function AddBtn(id, text, callback, size, color)
     if ActiveVirtualKeys[id] then ActiveVirtualKeys[id].Button:Destroy() end
     local btn = Instance.new("TextButton")
     btn.Size = size or UDim2.new(0, 50, 0, 50)
@@ -208,36 +187,21 @@ local function AddBtn(id, text, callback, isHold, size, color)
     btn.Parent = ScreenGui
     createCorner(btn, 10); createStroke(btn, Theme.Accent)
     
-    if isHold then
-        btn.InputBegan:Connect(function(i) 
-            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-                btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Bg
-                if M1Loop then M1Loop:Disconnect() end
-                M1Loop = RunService.Heartbeat:Connect(callback)
-            end
-        end)
-        btn.InputEnded:Connect(function(i)
-            if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-                btn.BackgroundColor3 = color or Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent
-                if M1Loop then M1Loop:Disconnect(); M1Loop = nil end
-            end
-        end)
-    else
-        btn.MouseButton1Click:Connect(function()
-            btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Bg; callback()
-            task.delay(0.1, function() btn.BackgroundColor3 = color or Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent end)
-        end)
-    end
+    btn.MouseButton1Click:Connect(function()
+        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Bg; callback()
+        task.delay(0.1, function() btn.BackgroundColor3 = color or Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent end)
+    end)
+    
     MakeDraggable(btn)
     ActiveVirtualKeys[id] = {Button = btn}
     return btn
 end
 
 -- ==============================================================================
--- [4] SETUP BUTTONS (DEFAULT LAYOUT)
+-- [4] SETUP BUTTONS (LAYOUT)
 -- ==============================================================================
 
--- [ROW 1] Weapons (Anti-Spam Fixed)
+-- [ROW 1] Weapons (Toggle Logic)
 AddBtn("1", "1", function() EquipWeapon(1) end).Position = UDim2.new(0.65, 0, 0.45, 0)
 AddBtn("2", "2", function() EquipWeapon(2) end).Position = UDim2.new(0.75, 0, 0.45, 0)
 AddBtn("3", "3", function() EquipWeapon(3) end).Position = UDim2.new(0.85, 0, 0.45, 0)
@@ -250,17 +214,15 @@ AddBtn("C", "C", function() TriggerMainSkill("C") end).Position = UDim2.new(0.85
 AddBtn("V", "V", function() TriggerMainSkill("V") end).Position = UDim2.new(0.70, 0, 0.65, 0)
 AddBtn("F", "F", function() TriggerMainSkill("F") end).Position = UDim2.new(0.80, 0, 0.65, 0)
 
--- [ROW 3] Special
+-- [ROW 3] Special & Context
 AddBtn("Buso", "HAKI", function() ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso") end).Position = UDim2.new(0.60, 0, 0.35, 0)
 AddBtn("Ken", "KEN", function() TriggerContext("Ken") end).Position = UDim2.new(0.70, 0, 0.35, 0)
 AddBtn("Race", "RACE", function() TriggerContext("RaceAbility") end).Position = UDim2.new(0.80, 0, 0.35, 0)
 AddBtn("Soru", "SORU", function() TriggerContext("Soru") end).Position = UDim2.new(0.50, 0, 0.65, 0)
+AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim2.new(0.90, 0, 0.35, 0)
 
 -- [ROW 4] Actions
-local bM1 = AddBtn("M1", "ATK", DoAttackM1, true, UDim2.new(0, 65, 0, 65), Theme.Red)
-bM1.Position = UDim2.new(0.90, 0, 0.25, 0); bM1.BackgroundTransparency = 0.3
-
-local bJump = AddBtn("Jump", "JUMP", TriggerJump, false, UDim2.new(0, 60, 0, 60), Theme.Blue)
+local bJump = AddBtn("Jump", "JUMP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
 bJump.Position = UDim2.new(0.90, 0, 0.70, 0)
 
-print("Velox v1.7 Stable Loaded")
+print("Velox v1.8 Loaded: ToggleEquip + Dodge Added")
