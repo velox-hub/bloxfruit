@@ -1,6 +1,6 @@
 -- ==============================================================================
--- [ VELOX LITE V4 - COMBO EDITION ]
--- Custom Combo: Bisa atur urutan Senjata & Skill sendiri
+-- [ VELOX LITE V4 - DYNAMIC COMBO BUILDER ]
+-- Features: In-Game Editor, Auto M1 on Skills, Add/Delete Steps.
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -11,82 +11,50 @@ local VirtualInputManager = game:GetService("VirtualInputManager")
 local LocalPlayer = Players.LocalPlayer
 local Camera = workspace.CurrentCamera
 
--- CONFIG UTAMA
+-- CONFIG & THEME
 local Theme = {
-    Bg = Color3.fromRGB(25, 25, 30),
+    Bg = Color3.fromRGB(20, 20, 25),
+    Main = Color3.fromRGB(35, 35, 40),
     Accent = Color3.fromRGB(0, 255, 170),
     Text = Color3.fromRGB(240, 240, 240),
     Red = Color3.fromRGB(255, 80, 80),
-    Combo = Color3.fromRGB(255, 150, 0) -- Warna Tombol Combo
+    Yellow = Color3.fromRGB(255, 200, 0)
 }
 
 local WeaponData = {
-    [1] = {tooltip = "Melee"}, [2] = {tooltip = "Blox Fruit"},
-    [3] = {tooltip = "Sword"}, [4] = {tooltip = "Gun"}
+    ["1"] = "Melee", ["2"] = "Blox Fruit", ["3"] = "Sword", ["4"] = "Gun"
 }
 
--- ==============================================================================
--- [ PENGATURAN COMBO - EDIT DI SINI ]
--- ==============================================================================
--- Penjelasan:
--- type "E" = Equip (1: Melee, 2: Fruit, 3: Sword, 4: Gun)
--- type "S" = Skill (Z, X, C, V, F)
--- delay    = Waktu tunggu sebelum ke skill berikutnya (detik)
+-- DATA COMBO (DYNAMIC)
+local MyCombo = {}
 
-local ComboSettings = {
-    {type = "E", val = 2, delay = 0.1}, -- Ambil Fruit (Slot 2)
-    {type = "S", val = "Z", delay = 0.8}, -- Skill Z Fruit, tunggu 0.8 detik
-    {type = "S", val = "X", delay = 0.5}, -- Skill X Fruit, tunggu 0.5 detik
-    {type = "E", val = 3, delay = 0.1}, -- Ganti ke Sword (Slot 3)
-    {type = "S", val = "Z", delay = 0.6}, -- Skill Z Sword
-    {type = "S", val = "X", delay = 0.2}, -- Skill X Sword
-}
+-- CLEANUP & UI BASE
+if CoreGui:FindFirstChild("VeloxBuilder") then CoreGui.VeloxBuilder:Destroy() end
+local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxBuilder"; ScreenGui.Parent = CoreGui
 
 -- ==============================================================================
--- [ LOGIC DASAR ]
+-- [ FUNGSI LOGIC ]
 -- ==============================================================================
-
-if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
-local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
 
 local function TapM1()
     local vp = Camera.ViewportSize
-    local x, y = vp.X / 2, vp.Y / 2
-    VirtualInputManager:SendTouchEvent(5, 0, x, y)
+    VirtualInputManager:SendTouchEvent(5, 0, vp.X/2, vp.Y/2)
     task.wait(0.01)
-    VirtualInputManager:SendTouchEvent(5, 2, x, y)
+    VirtualInputManager:SendTouchEvent(5, 2, vp.X/2, vp.Y/2)
 end
 
--- ForceEquip: Memastikan senjata terpakai (tidak toggle lepas)
-local function ForceEquip(slot)
-    local char = LocalPlayer.Character; if not char then return end
-    local hum = char:FindFirstChild("Humanoid"); if not hum then return end
-    local target = WeaponData[slot].tooltip
-    
-    local current = char:FindFirstChildOfClass("Tool")
-    if current and current.ToolTip == target then return end -- Sudah dipakai
-    
-    for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-        if t:IsA("Tool") and t.ToolTip == target then 
-            hum:EquipTool(t)
-            break 
+local function ForceEquip(slotStr)
+    local target = WeaponData[slotStr]
+    local char = LocalPlayer.Character
+    if char and target then
+        local hum = char:FindFirstChild("Humanoid")
+        for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if t:IsA("Tool") and t.ToolTip == target then 
+                hum:EquipTool(t)
+                break 
+            end
         end
     end
-end
-
--- Toggle Biasa (untuk tombol 1-4)
-local function ToggleEquip(slot)
-    local char = LocalPlayer.Character; if not char then return end
-    local hum = char:FindFirstChild("Humanoid"); if not hum then return end
-    local target = WeaponData[slot].tooltip
-    local current = char:FindFirstChildOfClass("Tool")
-    if current and current.ToolTip == target then hum:UnequipTools() else ForceEquip(slot) end
-end
-
-local function FireUI(btn)
-    if not btn then return end
-    for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
-    for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
 end
 
 local function TriggerSkill(key)
@@ -95,20 +63,10 @@ local function TriggerSkill(key)
     if Skills then
         for _, f in pairs(Skills:GetChildren()) do
             if f:IsA("Frame") and f.Visible and f:FindFirstChild(key) then
-                FireUI(f[key]:FindFirstChild("Mobile") or f[key])
-                return
-            end
-        end
-    end
-end
-
-local function TriggerDodge()
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local Ctx = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
-    if Ctx then
-        for _, f in pairs(Ctx:GetChildren()) do
-            if f.Name:find("BoundAction") and f.Name:find("Dodge") then
-                FireUI(f:FindFirstChild("Button"))
+                local btn = f[key]:FindFirstChild("Mobile") or f[key]
+                for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
+                task.wait(0.05)
+                TapM1() -- TRIGGER M1 OTOMATIS SETELAH SKILL
                 return
             end
         end
@@ -116,75 +74,145 @@ local function TriggerDodge()
 end
 
 -- ==============================================================================
--- [ COMBO EXECUTION ]
+-- [ UI COMPONENTS ]
 -- ==============================================================================
 
-local function ExecuteCombo()
-    for _, step in ipairs(ComboSettings) do
-        if step.type == "E" then
+-- Panel Utama
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 300, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -150, 0.5, -175)
+MainFrame.BackgroundColor3 = Theme.Bg
+MainFrame.BorderSizePixel = 0
+MainFrame.Visible = false
+MainFrame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner"); Corner.Parent = MainFrame
+local Stroke = Instance.new("UIStroke"); Stroke.Color = Theme.Accent; Stroke.Thickness = 2; Stroke.Parent = MainFrame
+
+-- Judul
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 40)
+Title.Text = "COMBO BUILDER V4"
+Title.TextColor3 = Theme.Accent
+Title.BackgroundTransparency = 1
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 16
+Title.Parent = MainFrame
+
+-- List Tampilan Combo
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Size = UDim2.new(0.9, 0, 0, 150)
+Scroll.Position = UDim2.new(0.05, 0, 0, 50)
+Scroll.BackgroundColor3 = Theme.Main
+Scroll.BorderSizePixel = 0
+Scroll.CanvasSize = UDim2.new(0, 0, 2, 0)
+Scroll.Parent = MainFrame
+local ListLayout = Instance.new("UIListLayout"); ListLayout.Parent = Scroll; ListLayout.Padding = UDim.new(0, 5)
+
+-- Fungsi Update List UI
+local function RefreshComboList()
+    for _, child in pairs(Scroll:GetChildren()) do if child:IsA("TextLabel") then child:Destroy() end end
+    for i, step in ipairs(MyCombo) do
+        local label = Instance.new("TextLabel")
+        label.Size = UDim2.new(1, -10, 0, 25)
+        label.BackgroundColor3 = Color3.new(1,1,1)
+        label.BackgroundTransparency = 0.9
+        label.Text = i..". ["..step.type.."] : "..step.val
+        label.TextColor3 = Theme.Text
+        label.Font = Enum.Font.Gotham
+        label.TextSize = 12
+        label.Parent = Scroll
+    end
+end
+
+-- ==============================================================================
+-- [ TOMBOL INPUT ]
+-- ==============================================================================
+
+local function AddStep(t, v)
+    table.insert(MyCombo, {type = t, val = v})
+    RefreshComboList()
+end
+
+-- Container Tombol Tambah
+local BtnGrid = Instance.new("Frame")
+BtnGrid.Size = UDim2.new(0.9, 0, 0, 80)
+BtnGrid.Position = UDim2.new(0.05, 0, 0, 210)
+BtnGrid.BackgroundTransparency = 1
+BtnGrid.Parent = MainFrame
+
+local function CreateAddBtn(text, t, v, color, pos)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 40, 0, 35)
+    b.Position = pos
+    b.Text = text
+    b.BackgroundColor3 = color
+    b.Font = Enum.Font.GothamBold
+    b.TextColor3 = Color3.new(1,1,1)
+    b.Parent = BtnGrid
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0,5); c.Parent = b
+    b.MouseButton1Click:Connect(function() AddStep(t, v) end)
+end
+
+-- Row 1: Weapon (1-4)
+for i=1, 4 do CreateAddBtn(tostring(i), "Equip", tostring(i), Theme.Accent, UDim2.new(0, (i-1)*45, 0, 0)) end
+-- Row 2: Skills (Z-F)
+local skills = {"Z", "X", "C", "V", "F"}
+for i, s in ipairs(skills) do CreateAddBtn(s, "Skill", s, Theme.Yellow, UDim2.new(0, (i-1)*45, 0, 40)) end
+
+-- Action Buttons (Execute & Clear)
+local RunBtn = Instance.new("TextButton")
+RunBtn.Size = UDim2.new(0, 130, 0, 40)
+RunBtn.Position = UDim2.new(0.05, 0, 0, 300)
+RunBtn.Text = "EXECUTE"
+RunBtn.BackgroundColor3 = Theme.Accent
+RunBtn.Font = Enum.Font.GothamBold
+RunBtn.Parent = MainFrame
+
+local ClearBtn = Instance.new("TextButton")
+ClearBtn.Size = UDim2.new(0, 130, 0, 40)
+ClearBtn.Position = UDim2.new(0.52, 0, 0, 300)
+ClearBtn.Text = "CLEAR / DELETE"
+ClearBtn.BackgroundColor3 = Theme.Red
+ClearBtn.Font = Enum.Font.GothamBold
+ClearBtn.Parent = MainFrame
+
+-- Logic Eksekusi Combo
+RunBtn.MouseButton1Click:Connect(function()
+    for _, step in ipairs(MyCombo) do
+        if step.type == "Equip" then
             ForceEquip(step.val)
-        elseif step.type == "S" then
+            task.wait(0.3)
+        elseif step.type == "Skill" then
             TriggerSkill(step.val)
+            task.wait(0.7) -- Delay antar skill
         end
-        task.wait(step.delay or 0.1)
     end
-end
+end)
 
--- ==============================================================================
--- [ UI BUILDER ]
--- ==============================================================================
+ClearBtn.MouseButton1Click:Connect(function()
+    MyCombo = {}
+    RefreshComboList()
+end)
 
-local function MakeDraggable(guiObject)
-    local dragging, dragInput, dragStart, startPos
-    guiObject.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; dragStart = input.Position; startPos = guiObject.Position
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            guiObject.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        end
-    end)
-    guiObject.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then dragging = false end
-    end)
-end
+-- Tombol Buka/Tutup UI
+local Toggle = Instance.new("TextButton")
+Toggle.Size = UDim2.new(0, 100, 0, 40)
+Toggle.Position = UDim2.new(0, 10, 0.5, 0)
+Toggle.Text = "EDIT COMBO"
+Toggle.BackgroundColor3 = Theme.Bg
+Toggle.TextColor3 = Theme.Accent
+Toggle.Parent = ScreenGui
+local TC = Instance.new("UICorner"); TC.Parent = Toggle
+Toggle.MouseButton1Click:Connect(function() MainFrame.Visible = not MainFrame.Visible end)
 
-local function CreateBtn(text, func, size, color, pos)
-    local btn = Instance.new("TextButton")
-    btn.Size = size; btn.Position = pos; btn.BackgroundColor3 = color; btn.BackgroundTransparency = 0.2
-    btn.Text = text; btn.TextColor3 = Theme.Text; btn.Font = Enum.Font.GothamBold; btn.TextSize = 14; btn.Parent = ScreenGui
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = btn
-    local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Accent; stroke.Thickness = 1.5; stroke.Parent = btn
-    btn.MouseButton1Click:Connect(func)
-    MakeDraggable(btn)
-    return btn
-end
+-- Fitur Draggable untuk MainFrame
+local d = false; local start; local pos
+MainFrame.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then d = true; start = i.Position; pos = MainFrame.Position end end)
+UserInputService.InputChanged:Connect(function(i) if d and (i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseMovement) then 
+    local delta = i.Position - start
+    MainFrame.Position = UDim2.new(pos.X.Scale, pos.X.Offset + delta.X, pos.Y.Scale, pos.Y.Offset + delta.Y)
+end end)
+MainFrame.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.Touch or i.UserInputType == Enum.UserInputType.MouseButton1 then d = false end end)
 
--- ==============================================================================
--- [ LAYOUT TOMBOL ]
--- ==============================================================================
-
--- Senjata
-CreateBtn("1", function() ToggleEquip(1) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.45,0))
-CreateBtn("2", function() ToggleEquip(2) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.73,0,0.45,0))
-CreateBtn("3", function() ToggleEquip(3) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.81,0,0.45,0))
-CreateBtn("4", function() ToggleEquip(4) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.89,0,0.45,0))
-
--- Skill
-CreateBtn("Z", function() TriggerSkill("Z") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.55,0))
-CreateBtn("X", function() TriggerSkill("X") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.73,0,0.55,0))
-CreateBtn("C", function() TriggerSkill("C") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.81,0,0.55,0))
-CreateBtn("V", function() TriggerSkill("V") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.69,0,0.65,0))
-CreateBtn("F", function() TriggerSkill("F") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.77,0,0.65,0))
-
--- Special (M1 & Dodge)
-CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Theme.Red, UDim2.new(0.9,0,0.25,0))
-CreateBtn("Dodge", TriggerDodge, UDim2.new(0,50,0,50), Theme.Bg, UDim2.new(0.89,0,0.55,0))
-
--- TOMBOL COMBO UTAMA
-CreateBtn("START COMBO", ExecuteCombo, UDim2.new(0,120,0,45), Theme.Combo, UDim2.new(0.4,0,0.8,0))
-
-print("Velox Lite V4: Combo Master Loaded")
+print("Velox Builder V4 Loaded. Press 'EDIT COMBO' to start.")
