@@ -1,7 +1,7 @@
 -- ==============================================================================
--- [ VELOX LITE V3.2 - ABSOLUTE SYNC ]
--- Fix: M1 Coordinates are now mathematically identical to Crosshair Center.
--- System: Uses 'IgnoreGuiInset = true' to match VirtualInputManager 1:1.
+-- [ VELOX LITE V4 - SIMPLE & ESSENTIAL ]
+-- Features: 1-4 (Toggle), Z-F (Skill), M1 (Center Tap), Dodge.
+-- No Bloat, No Crosshair, lightweight code.
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -10,14 +10,14 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
--- UI CONFIG
+-- CONFIG
 local Theme = {
-    Bg = Color3.fromRGB(20, 20, 25),
-    Accent = Color3.fromRGB(0, 255, 180),
+    Bg = Color3.fromRGB(25, 25, 30),
+    Accent = Color3.fromRGB(0, 255, 170),
     Text = Color3.fromRGB(240, 240, 240),
-    Red = Color3.fromRGB(255, 80, 80),
-    Aim = Color3.fromRGB(255, 255, 0)
+    Red = Color3.fromRGB(255, 80, 80)
 }
 
 local WeaponData = {
@@ -25,38 +25,25 @@ local WeaponData = {
     [3] = {tooltip = "Sword"}, [4] = {tooltip = "Gun"}
 }
 
--- SETUP GUI (CRITICAL STEP)
+-- CLEANUP OLD UI
 if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
 local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
 
--- [PENTING] Ini membuat koordinat UI = Koordinat Touch Input
-ScreenGui.IgnoreGuiInset = true 
-
--- VARIABLE REFERENSI
-local AimButtonRef = nil
-
 -- ==============================================================================
--- [1] CORE LOGIC
+-- [1] LOGIC FUNGSI
 -- ==============================================================================
 
--- M1 (ABSOLUTE CENTER TAP)
+-- M1: KLIK TENGAH LAYAR (JARI HANTU ID 5)
 local function TapM1()
-    if AimButtonRef then
-        -- Matematika Murni: Posisi Kiri Atas + (Ukuran / 2) = Titik Tengah
-        local absPos = AimButtonRef.AbsolutePosition
-        local absSize = AimButtonRef.AbsoluteSize
-        
-        local x = absPos.X + (absSize.X / 2)
-        local y = absPos.Y + (absSize.Y / 2)
-        
-        -- Kirim Sentuhan ke koordinat hasil hitungan (ID 5)
-        VirtualInputManager:SendTouchEvent(5, 0, x, y) -- Tekan
-        task.wait() -- 1 Frame delay
-        VirtualInputManager:SendTouchEvent(5, 2, x, y) -- Lepas
-    end
+    local vp = Camera.ViewportSize
+    local x, y = vp.X / 2, vp.Y / 2
+    
+    VirtualInputManager:SendTouchEvent(5, 0, x, y) -- Tekan
+    task.wait(0.01)
+    VirtualInputManager:SendTouchEvent(5, 2, x, y) -- Lepas
 end
 
--- 1-4 TOGGLE EQUIP
+-- 1-4: TOGGLE SENJATA
 local function ToggleEquip(slot)
     local char = LocalPlayer.Character; if not char then return end
     local hum = char:FindFirstChild("Humanoid"); if not hum then return end
@@ -72,7 +59,7 @@ local function ToggleEquip(slot)
     end
 end
 
--- SKILLS & UTILS
+-- UTILS: KLIK UI
 local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
@@ -82,6 +69,7 @@ local function FireUI(btn)
     end
 end
 
+-- SKILL: Z-F
 local function TriggerSkill(key)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local Skills = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
@@ -95,6 +83,7 @@ local function TriggerSkill(key)
     end
 end
 
+-- DODGE
 local function TriggerDodge()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local Ctx = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
@@ -109,7 +98,7 @@ local function TriggerDodge()
 end
 
 -- ==============================================================================
--- [2] UI BUILDER
+-- [2] PEMBUAT TOMBOL (UI BUILDER)
 -- ==============================================================================
 
 local function MakeDraggable(guiObject)
@@ -129,73 +118,48 @@ local function MakeDraggable(guiObject)
     end)
 end
 
-local function CreateBtn(text, func, size, color, pos, isCrosshair)
+local function CreateBtn(text, func, size, color, pos)
     local btn = Instance.new("TextButton")
     btn.Size = size
     btn.Position = pos
-    
-    if isCrosshair then
-        -- Visual Crosshair (Target)
-        btn.BackgroundColor3 = Theme.Aim
-        btn.BackgroundTransparency = 0.5
-        btn.Text = ""
-        
-        -- Garis Vertikal (Tengah)
-        local v = Instance.new("Frame"); v.Size=UDim2.new(0,2,1,0); v.Position=UDim2.new(0.5,-1,0,0); v.BackgroundColor3=Color3.new(0,0,0); v.BackgroundTransparency=0.2; v.Parent=btn
-        -- Garis Horizontal (Tengah)
-        local h = Instance.new("Frame"); h.Size=UDim2.new(1,0,0,2); h.Position=UDim2.new(0,0,0.5,-1); h.BackgroundColor3=Color3.new(0,0,0); h.BackgroundTransparency=0.2; h.Parent=btn
-        
-        AimButtonRef = btn 
-    else
-        btn.BackgroundColor3 = color
-        btn.BackgroundTransparency = 0.2
-        btn.TextColor3 = Theme.Text
-        btn.Text = text
-        btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 14
-        
-        local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = btn
-        local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Accent; stroke.Thickness = 1.5; stroke.Parent = btn
-        
-        btn.MouseButton1Click:Connect(function()
-            btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0); func()
-            task.delay(0.1, function() btn.BackgroundColor3 = color; btn.TextColor3 = Theme.Text end)
-        end)
-    end
-    
-    if isCrosshair then
-        -- Lingkaran Crosshair
-        local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = btn
-        local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Aim; stroke.Thickness = 2; stroke.Parent = btn
-    end
-
+    btn.BackgroundColor3 = color
+    btn.BackgroundTransparency = 0.2
+    btn.Text = text
+    btn.TextColor3 = Theme.Text
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 14
     btn.Parent = ScreenGui
+    
+    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = btn
+    local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Accent; stroke.Thickness = 1.5; stroke.Parent = btn
+    
+    btn.MouseButton1Click:Connect(function()
+        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0); func()
+        task.delay(0.1, function() btn.BackgroundColor3 = color; btn.TextColor3 = Theme.Text end)
+    end)
     MakeDraggable(btn)
     return btn
 end
 
 -- ==============================================================================
--- [3] LAYOUT
+-- [3] SUSUNAN TOMBOL (LAYOUT)
 -- ==============================================================================
 
--- AIM CROSSHAIR (Patokan Pas)
-CreateBtn("", nil, UDim2.new(0,40,0,40), Theme.Aim, UDim2.new(0.5, -20, 0.4, -20), true)
-
--- Weapons (Row 1)
+-- Baris 1: Senjata
 CreateBtn("1", function() ToggleEquip(1) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.45,0))
 CreateBtn("2", function() ToggleEquip(2) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.73,0,0.45,0))
 CreateBtn("3", function() ToggleEquip(3) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.81,0,0.45,0))
 CreateBtn("4", function() ToggleEquip(4) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.89,0,0.45,0))
 
--- Skills (Row 2)
+-- Baris 2: Skill
 CreateBtn("Z", function() TriggerSkill("Z") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.55,0))
 CreateBtn("X", function() TriggerSkill("X") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.73,0,0.55,0))
 CreateBtn("C", function() TriggerSkill("C") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.81,0,0.55,0))
 CreateBtn("V", function() TriggerSkill("V") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.69,0,0.65,0))
 CreateBtn("F", function() TriggerSkill("F") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.77,0,0.65,0))
 
--- Actions (Row 3 & Side)
+-- Aksi (M1 & Dodge)
 CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Theme.Red, UDim2.new(0.9,0,0.25,0))
 CreateBtn("Dodge", TriggerDodge, UDim2.new(0,50,0,50), Theme.Bg, UDim2.new(0.89,0,0.55,0))
 
-print("Velox Lite V3.2: Absolute Sync Loaded")
+print("Velox Lite V4: Simple Loaded")
