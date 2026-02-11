@@ -1421,6 +1421,21 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
     end)
 end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
 
+local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
+    ShowPopup("CONFIRM EXIT?", function(c)
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
+        yes.MouseButton1Click:Connect(function() 
+            isRunning = false -- Matikan loop combo
+            if ScreenGui then ScreenGui:Destroy() end -- Hapus UI
+        end)
+        
+        no.MouseButton1Click:Connect(ClosePopup)
+        return 50
+    end)
+end, P_Sys); ExitBtn.Size=UDim2.new(0.9,0,0,45)
+
 -- === STARTUP ===
 ShowNotification("VELOX Loaded.", Theme.Accent)
 task.wait(1)
