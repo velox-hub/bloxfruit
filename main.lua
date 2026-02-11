@@ -1,8 +1,8 @@
 -- ==============================================================================
--- [ VELOX V135 - MODIFIED INPUT SYSTEM ]
--- Updated Logic:
--- 1-4 : Direct Humanoid:EquipTool()
--- Z-F : Fire UI Signal + Virtual M1 Tap
+-- [ VELOX V135 - FIXED FULL VERSION ]
+-- INPUT METHOD REWRITTEN:
+-- 1. Weapons (1-4) -> Direct Humanoid:EquipTool()
+-- 2. Skills (Z-F)  -> FireUI + Wait + Tap M1
 -- ==============================================================================
 
 local VIM = game:GetService("VirtualInputManager")
@@ -70,7 +70,7 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [2] UTILITY FUNCTIONS
+-- [2] UTILITY FUNCTIONS & NEW INPUT LOGIC
 -- ==============================================================================
 
 local function createCorner(p, r) 
@@ -120,13 +120,9 @@ local function isChatting()
     return focused ~= nil
 end
 
--- ==============================================================================
--- [3] CORE LOGIC (NEW INPUT METHODS)
--- ==============================================================================
+-- [[ NEW INPUT LOGIC STARTS HERE ]] --
 
-local JoyOuter, JoyKnob, JoyDrag, ToggleBtn, JoyContainer, LockBtn, ScreenGui
-
--- [[ NEW: HELPERS FOR SIGNAL FIRING ]] --
+-- 1. Helper: Fire UI Signals
 local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
@@ -136,83 +132,84 @@ local function FireUI(btn)
     end
 end
 
--- [[ NEW: TAP M1 (VIM) ]] --
+-- 2. Helper: Tap Screen (M1)
 local function TapM1(optX, optY)
     local vp = Camera.ViewportSize
-    -- Default ke tengah layar jika tidak ada koordinat (untuk instant)
     local x, y = optX or (vp.X / 2), optY or (vp.Y / 2)
-    
-    VIM:SendTouchEvent(5, 0, x, y) -- Tekan (ID 5 ghost finger)
-    task.wait(0.02)
-    VIM:SendTouchEvent(5, 2, x, y) -- Lepas
+    VIM:SendTouchEvent(5, 0, x, y) -- Press
+    task.wait(0.01)
+    VIM:SendTouchEvent(5, 2, x, y) -- Release
 end
 
--- [[ NEW: EXECUTE SKILL (UI + M1) ]] --
-local function TriggerSkillWithM1(keyName, targetX, targetY)
+-- 3. Core: Trigger Skill (Z-F)
+-- Sequence: Cari Tombol -> FireUI -> Wait -> Tap M1
+local function TriggerSkillSequence(keyName, targetX, targetY)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local Skills = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
     
-    local found = false
+    local btnFound = nil
     if Skills then
         for _, f in pairs(Skills:GetChildren()) do
             if f:IsA("Frame") and f.Visible and f.Name == keyName then
-                -- Target tombol skillnya (biasanya ada child Button atau Mobile)
-                local btn = f:FindFirstChild("Mobile") or f:FindFirstChild("Button") or f
-                FireUI(btn) -- 1. Trigger Skill UI
-                found = true
+                -- Biasanya tombol skill ada di dalam frame bernama 'Name' skill tersebut
+                btnFound = f:FindFirstChild("Mobile") or f:FindFirstChild("Button") or f
                 break
             end
         end
     end
-    
-    -- 2. Trigger M1 setelah skill aktif
-    -- Kita beri delay sangat kecil agar game register skill dulu
-    task.spawn(function()
-        if found then task.wait() end -- Tunggu 1 frame jika tombol ketemu
+
+    if btnFound then
+        -- Step 1: Fire UI (Equip Skill)
+        FireUI(btnFound)
+        
+        -- Step 2: Jeda Stabilisasi (0.02 - 0.05 recommended)
+        task.wait(0.04) 
+        
+        -- Step 3: Tap M1 (Cast Skill)
         TapM1(targetX, targetY)
-    end)
+    else
+        -- Fallback jika UI tidak ketemu (jarang terjadi)
+        -- print("Skill Button Not Found: " .. keyName)
+    end
 end
 
--- [[ NEW: EQUIP TOOL (DIRECT INVENTORY) ]] --
-local function EquipToolBySlot(slotIdx)
+-- 4. Core: Equip Weapon (1-4)
+-- Logic: Direct Inventory Search & Equip
+local function EquipDirect(slotIdx)
     local char = LocalPlayer.Character
     if not char then return end
     local hum = char:FindFirstChild("Humanoid")
     if not hum then return end
     
-    -- Cek Tooltip dari data
     local targetTip = WeaponData[slotIdx].tooltip
     
-    -- Cek apakah sudah pakai?
-    local current = char:FindFirstChildOfClass("Tool")
-    if current and current.ToolTip == targetTip then
-        return -- Sudah equip, jangan apa-apain (biar gak unequip)
-    end
-    
-    -- Cari di backpack
+    -- Cek BackPack
     local bp = LocalPlayer:FindFirstChild("Backpack")
     if bp then
         for _, t in pairs(bp:GetChildren()) do
             if t:IsA("Tool") and t.ToolTip == targetTip then
                 hum:EquipTool(t)
-                break
+                return
             end
         end
     end
 end
 
--- Update Helper untuk Combo Check
 local function isWeaponReady(targetSlotIdx)
     local char = LocalPlayer.Character
     if not char then return false end
     local tool = char:FindFirstChildOfClass("Tool")
     if not tool then return false end 
     local expectedTip = WeaponData[targetSlotIdx].tooltip
-    if tool.ToolTip == expectedTip then return true end
-    return false
+    return tool.ToolTip == expectedTip
 end
 
--- UI Transparency Manager
+-- ==============================================================================
+-- [3] CORE LOGIC & MANAGERS
+-- ==============================================================================
+
+local JoyOuter, JoyKnob, JoyDrag, ToggleBtn, JoyContainer, LockBtn, ScreenGui
+
 UpdateTransparencyFunc = function()
     local t = GlobalTransparency
     
@@ -314,16 +311,16 @@ local function executeComboSequence(idx)
                 break 
             end
             
-            -- 1. EQUIP SENJATA (Direct)
-            if not isWeaponReady(step.Slot) then EquipToolBySlot(step.Slot) end
+            -- 1. EQUIP (Paksa Equip)
+            if not isWeaponReady(step.Slot) then EquipDirect(step.Slot) end
             
-            -- Delay sebelum skill (opsional user)
+            -- Delay Opsional user
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
             
-            -- 2. FIRE SKILL (UI + M1)
-            TriggerSkillWithM1(step.Key, nil, nil) -- Nil means center screen
+            -- 2. FIRE SKILL (Sequence Baru)
+            TriggerSkillSequence(step.Key, nil, nil) -- Nil = Center
             
-            -- Wait setelah skill
+            -- Wait setelah cast (agar tidak spamming terlalu cepat)
             task.wait(step.HoldTime or 0.3)
         end
         
@@ -345,11 +342,10 @@ local SmartTouchObject = nil
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if isChatting() then return end 
 
-    -- [[ PC KEYBINDS HANDLER ]] --
+    -- PC Keybinds
     if input.UserInputType == Enum.UserInputType.Keyboard and not gameProcessed then
         for action, bindKey in pairs(Keybinds) do
             if input.KeyCode == bindKey then
-                -- COMBO BIND
                 if string.sub(action, 1, 1) == "C" then 
                     local id = tonumber(string.sub(action, 2))
                     if Combos[id] then
@@ -360,49 +356,44 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                             ShowNotification("Combo "..id.." Selected", Theme.Green) 
                         end
                     end
-                
-                -- VIRTUAL KEY BIND (Senjata / Skill)
                 elseif ActiveVirtualKeys[action] then 
                     local vData = ActiveVirtualKeys[action]
                     local isWeaponKey = table.find({"1","2","3","4"}, vData.KeyName)
                     
                     if isWeaponKey then
-                        EquipToolBySlot(vData.Slot)
-                    else
-                        -- Ini Skill (Z-F)
+                         -- Senjata: Direct Equip
+                         EquipDirect(vData.Slot)
+                    else 
+                        -- Skill: Cek Mode
                         if SkillMode == "INSTANT" then
-                            if vData.Slot then EquipToolBySlot(vData.Slot) end
-                            TriggerSkillWithM1(vData.KeyName, nil, nil)
+                             if vData.Slot then EquipDirect(vData.Slot) end
+                             TriggerSkillSequence(vData.KeyName, nil, nil)
                         else 
-                            -- Smart Mode (PC)
-                            CurrentSmartKeyData = vData
-                            ShowNotification("Skill "..vData.KeyName.." Ready (Click Screen)", Theme.Green) 
+                             CurrentSmartKeyData = vData
+                             ShowNotification("Skill "..action.." Ready", Theme.Green) 
                         end
                     end
                 end
             end
         end
     end
-
-    -- [[ SMART CAST / COMBO TAP HANDLER ]] --
+    
+    -- [SMART CAST TOUCH LOGIC]
     if not gameProcessed and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
         
-        -- Jika Smart Mode aktif dan kita sudah pilih skill
         if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
             SmartTouchObject = input 
             
             task.spawn(function()
-                -- Pastikan senjata ter-equip
                 if CurrentSmartKeyData.Slot and not isWeaponReady(CurrentSmartKeyData.Slot) then 
-                    EquipToolBySlot(CurrentSmartKeyData.Slot) 
+                    EquipDirect(CurrentSmartKeyData.Slot) 
                 end
                 
-                -- Fire Skill ke arah touch
-                TriggerSkillWithM1(CurrentSmartKeyData.KeyName, input.Position.X, input.Position.Y)
+                -- Fire Skill tepat di posisi jari
+                TriggerSkillSequence(CurrentSmartKeyData.KeyName, input.Position.X, input.Position.Y)
             end)
         end
         
-        -- Jika Combo Mode Smart Tap
         if SelectedComboID ~= nil and not isRunning then
             executeComboSequence(SelectedComboID)
         end
@@ -411,7 +402,7 @@ end)
 
 UserInputService.InputEnded:Connect(function(input)
     if input == SmartTouchObject and SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-        -- Reset Visual Tombol Smart
+        -- Reset Visual
         if ActiveVirtualKeys[CurrentSmartKeyData.ID] then
             local btn = ActiveVirtualKeys[CurrentSmartKeyData.ID].Button
             btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
@@ -554,7 +545,7 @@ BrandText.Parent = BrandFrame
 local TaglineText = Instance.new("TextLabel")
 TaglineText.Size = UDim2.new(1, 0, 0, 15)
 TaglineText.Position = UDim2.new(0, 0, 0.6, 0)
-TaglineText.Text = "Total Control. Instant Combo."
+TaglineText.Text = "Input System: REWRITTEN"
 TaglineText.TextColor3 = Theme.SubText
 TaglineText.Font = Enum.Font.Gotham
 TaglineText.TextSize = 9
@@ -661,11 +652,11 @@ GFrame.ScrollBarThickness = 4
 GFrame.ScrollingDirection = Enum.ScrollingDirection.Y
 GFrame.Parent = P_Guide
 
-local GText = [[WELCOME TO VELOX V135 (UPDATED)!
+local GText = [[WELCOME TO VELOX V135 (FIXED)!
 
-[ NEW INPUT SYSTEM ]
-• 1-4 : Direct Inventory Equip (No fake keys).
-• Skills : Direct UI Trigger + M1 (More Safe).
+[ UPDATED INPUT ]
+• Weapons (1-4): Now uses Humanoid:EquipTool directly.
+• Skills (Z-F): Now triggers UI + Waits + Taps Screen.
 
 [ FEATURES ]
 • Custom Layout: Resize & Move ANY button.
@@ -825,6 +816,13 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.ZIndex = 60
         MakeDraggable(btn, nil)
         
+        local kCode
+        if keyName=="1" then kCode=Enum.KeyCode.One 
+        elseif keyName=="2" then kCode=Enum.KeyCode.Two 
+        elseif keyName=="3" then kCode=Enum.KeyCode.Three 
+        elseif keyName=="4" then kCode=Enum.KeyCode.Four 
+        else kCode=Enum.KeyCode[keyName] end
+        
         local vData = {ID=id, KeyName=keyName, Slot=slotIdx, Button=btn}
         local isWeaponKey = (keyName == "1" or keyName == "2" or keyName == "3" or keyName == "4")
         
@@ -832,24 +830,21 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- [[ LOGIKA BARU: SENJATA (Direct Equip) ]] --
+                -- [[ LOGIKA: SENJATA (Direct Equip) ]] --
                 if isWeaponKey then
-                    -- Reset Smart Tap status jika kita ganti senjata
                     if CurrentSmartKeyData then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                         if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
                         CurrentSmartKeyData = nil 
                     end
-                    
-                    EquipToolBySlot(slotIdx) -- Panggil Equip Tool Langsung
+                    EquipDirect(slotIdx) -- Panggil Equip Tool Langsung
                     return 
                 end
                 
-                -- [[ LOGIKA BARU: SKILL (UI + M1) ]] --
+                -- [[ LOGIKA: SKILL (FireUI + M1) ]] --
                 if SkillMode == "INSTANT" then
-                    -- Instant: Equip dulu jika perlu -> Fire UI + M1
-                    if vData.Slot then EquipToolBySlot(vData.Slot) end
-                    TriggerSkillWithM1(keyName, nil, nil)
+                    if vData.Slot then EquipDirect(vData.Slot) end
+                    TriggerSkillSequence(keyName, nil, nil)
                     
                 elseif SkillMode == "SMART" then
                     -- Smart Tap: Toggle status Hijau
@@ -1133,7 +1128,6 @@ RefreshEditorUI = function()
         local top = Instance.new("Frame"); top.Size=UDim2.new(1,0,0,30); top.BackgroundTransparency=1; top.Parent=r
         local w = Instance.new("TextButton"); w.Size=UDim2.new(0.25,0,1,0); w.Position=UDim2.new(0.02,0,0,0); w.Text=WeaponData[s.Slot].name; w.TextColor3=WeaponData[s.Slot].color; w.BackgroundTransparency=1; w.Parent=top; w.Font=Enum.Font.GothamBold; w.TextSize=11; w.TextXAlignment="Left"; w.Selectable=false; w.MouseButton1Click:Connect(function() s.Slot=(s.Slot%4)+1; s.Key=WeaponData[s.Slot].keys[1]; RefreshEditorUI() end)
         local k = Instance.new("TextButton"); k.Size=UDim2.new(0.15,0,1,0); k.Position=UDim2.new(0.3,0,0,0); k.Text="["..s.Key.."]"; k.TextColor3=Theme.Text; k.BackgroundTransparency=1; k.Parent=top; k.Font=Enum.Font.GothamBold; k.TextSize=11; k.Selectable=false; k.MouseButton1Click:Connect(function() local l=WeaponData[s.Slot].keys; local idx=1; for j,v in ipairs(l) do if v==s.Key then idx=j end end; s.Key=l[(idx%#l)+1]; RefreshEditorUI() end)
-        --local m = Instance.new("TextButton"); m.Size=UDim2.new(0.25,0,0.7,0); m.Position=UDim2.new(0.5,0,0.15,0); m.Text=s.IsHold and "HOLD" or "TAP"; m.BackgroundColor3=s.IsHold and Theme.Accent or Theme.Green; m.TextColor3=Theme.Bg; m.Parent=top; m.Font=Enum.Font.GothamBold; m.TextSize=10; m.Selectable=false; createCorner(m,4); m.MouseButton1Click:Connect(function() s.IsHold = not s.IsHold; RefreshEditorUI() end)
         -- REMOVED HOLD/TAP BUTTON (ALL ARE UI FIRES NOW)
         
         local x = Instance.new("TextButton"); x.Size=UDim2.new(0.1,0,1,0); x.Position=UDim2.new(0.9,0,0,0); x.Text="X"; x.TextColor3=Theme.Red; x.BackgroundTransparency=1; x.Parent=top; x.TextSize=11; x.Font=Enum.Font.GothamBold; x.Selectable=false; x.MouseButton1Click:Connect(function() table.remove(d.Steps, i); RefreshEditorUI() end)
