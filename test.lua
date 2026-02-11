@@ -1,7 +1,7 @@
 -- ==============================================================================
--- [ VELOX LITE - CENTER M1 FIX ]
+-- [ VELOX LITE - HEAD AIM FIX ]
 -- Features: 1-4 (Toggle), Z-F, Dodge.
--- Fix: M1 taps perfectly in the center of the ScreenGui.
+-- Fix M1: Taps slightly above LocalPlayer's Head (Better Aim).
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -10,6 +10,7 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 -- UI CONFIG
 local Theme = {
@@ -24,26 +25,40 @@ local WeaponData = {
     [3] = {tooltip = "Sword"}, [4] = {tooltip = "Gun"}
 }
 
--- SETUP MAIN GUI FIRST (Agar bisa dipakai hitung tengah layar)
 if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
 local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
--- Penting: IgnoreGuiInset memastikan kita dapat ukuran layar penuh tanpa terpotong topbar
 ScreenGui.IgnoreGuiInset = true 
 
 -- ==============================================================================
 -- [1] CORE LOGIC
 -- ==============================================================================
 
--- M1 (PERFECT CENTER TAP)
+-- M1 (AIM: HEAD + OFFSET)
 local function TapM1()
-    -- Kita gunakan ukuran absolut dari GUI kita sendiri untuk mencari tengah
-    local centerPos = ScreenGui.AbsoluteSize / 2
-    local x, y = centerPos.X, centerPos.Y
-    
-    -- Gunakan Touch ID 5 (Jari "Hantu") agar tidak mengganggu analog
-    VirtualInputManager:SendTouchEvent(5, 0, x, y) -- Begin
-    task.wait() -- Tunggu 1 frame agar input terbaca oleh game
-    VirtualInputManager:SendTouchEvent(5, 2, x, y) -- End
+    local x, y
+    local char = LocalPlayer.Character
+    local head = char and char:FindFirstChild("Head")
+
+    if head then
+        -- Ambil posisi Kepala, lalu tambah 3 Studs ke atas (Y axis)
+        -- Ubah angka '3' jika ingin lebih tinggi/rendah
+        local targetWorldPos = head.Position + Vector3.new(0, 3, 0)
+        
+        -- Konversi posisi 3D World ke 2D Layar
+        local screenPos, onScreen = Camera:WorldToViewportPoint(targetWorldPos)
+        
+        x = screenPos.X
+        y = screenPos.Y
+    else
+        -- Fallback: Jika karakter mati/loading, pakai tengah layar biasa
+        local vp = Camera.ViewportSize
+        x, y = vp.X / 2, vp.Y / 2
+    end
+
+    -- Kirim Sentuhan Invisible (ID 5)
+    VirtualInputManager:SendTouchEvent(5, 0, x, y)
+    task.wait(0.01)
+    VirtualInputManager:SendTouchEvent(5, 2, x, y)
 end
 
 -- 1-4 TOGGLE EQUIP
@@ -62,7 +77,7 @@ local function ToggleEquip(slot)
     end
 end
 
--- SKILLS (Z-F) & DODGE UTILITY
+-- SKILLS & UTILS
 local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
@@ -96,7 +111,7 @@ local function TriggerDodge()
 end
 
 -- ==============================================================================
--- [2] UI BUILDER FUNCTIONS
+-- [2] UI BUILDER
 -- ==============================================================================
 
 local function MakeDraggable(guiObject)
@@ -159,4 +174,4 @@ CreateBtn("F", function() TriggerSkill("F") end, UDim2.new(0,45,0,45), Theme.Bg,
 CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Theme.Red, UDim2.new(0.9,0,0.25,0))
 CreateBtn("Dodge", TriggerDodge, UDim2.new(0,50,0,50), Theme.Bg, UDim2.new(0.89,0,0.55,0))
 
-print("Velox Lite: Center Tap Fixed")
+print("Velox Lite: Head-Aim M1 Loaded")
