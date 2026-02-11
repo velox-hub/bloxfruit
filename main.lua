@@ -1145,31 +1145,60 @@ end
 -- ==============================================================================
 
 local function GetCurrentState()
+    -- Helper untuk mengambil Posisi & Ukuran
+    local function getLayout(obj)
+        return {
+            px = obj.Position.X.Scale, po = obj.Position.X.Offset,
+            py = obj.Position.Y.Scale, poy = obj.Position.Y.Offset,
+            sx = obj.Size.X.Scale, so = obj.Size.X.Offset,
+            sy = obj.Size.Y.Scale, soy = obj.Size.Y.Offset
+        }
+    end
+
     local data = {
+        -- Global Settings
         Transparency = GlobalTransparency,
         JoystickEnabled = IsJoystickEnabled,
         SkillMode = SkillMode,
+        LayoutLocked = IsLayoutLocked, -- Simpan status Lock
+
+        -- UI Positions (Main Elements)
+        Pos_Window = getLayout(Window),
+        Pos_Toggle = getLayout(ToggleBtn),
+        Pos_Joy = getLayout(JoyContainer),
+        Pos_JoyOuter = getLayout(JoyOuter), -- Simpan ukuran joystick
+
+        -- Data Isi
         Combos = {},
         Keybinds = {},
         VirtualKeys = {}
     }
+
+    -- Simpan Data Combo + Posisi
     for _, combo in ipairs(Combos) do
         table.insert(data.Combos, {
             ID = combo.ID,
             Name = combo.Name,
-            Steps = combo.Steps
+            Steps = combo.Steps,
+            Layout = getLayout(combo.Button) -- Simpan Posisi Tombol Combo
         })
     end
+
+    -- Simpan Keybinds PC
     for id, key in pairs(Keybinds) do
         data.Keybinds[id] = key.Name
     end
+
+    -- Simpan Virtual Keys (Skill/Senjata) + Posisi
     for id, vData in pairs(ActiveVirtualKeys) do
         table.insert(data.VirtualKeys, {
             ID = id,
             KeyName = vData.Key.Name,
-            Slot = vData.Slot
+            Slot = vData.Slot,
+            Layout = getLayout(vData.Button) -- Simpan Posisi Tombol Skill
         })
     end
+
     return data
 end
 
@@ -1192,23 +1221,34 @@ local function LoadSpecific(configName)
     
     local data = fileData[configName]
     
-    -- 1. Restore System
+    -- Helper untuk menerapkan Posisi & Ukuran
+    local function applyLayout(obj, layoutData)
+        if not obj or not layoutData then return end
+        obj.Position = UDim2.new(layoutData.px, layoutData.po, layoutData.py, layoutData.poy)
+        obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
+    end
+
+    -- 1. Restore System Settings
     GlobalTransparency = data.Transparency or 0
     TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
     UpdateTransparencyFunc()
     
+    -- Restore Locked State
+    IsLayoutLocked = data.LayoutLocked or false
+    updateLockState()
+
+    -- Restore Joystick
     IsJoystickEnabled = data.JoystickEnabled or false
     JoyContainer.Visible = IsJoystickEnabled
     if IsJoystickEnabled then 
-        JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
         JoyToggle.Text = "JOYSTICK: ON"
         JoyToggle.BackgroundColor3 = Theme.Green
     else
         JoyToggle.Text = "JOYSTICK: OFF"
         JoyToggle.BackgroundColor3 = Theme.Red
     end
-    updateLockState()
-    
+
+    -- Restore Skill Mode
     SkillMode = data.SkillMode or "INSTANT"
     if SkillMode == "SMART" then 
         ModeBtn.Text = "SKILL MODE: SMART TAP"
@@ -1218,27 +1258,53 @@ local function LoadSpecific(configName)
         ModeBtn.BackgroundColor3 = Theme.Green
     end
 
-    -- 2. Clear
+    -- 2. Restore Main UI Positions
+    if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
+    if data.Pos_Toggle then applyLayout(ToggleBtn, data.Pos_Toggle) end
+    if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
+    if data.Pos_JoyOuter then 
+        applyLayout(JoyOuter, data.Pos_JoyOuter)
+        -- Update corner radius joystick agar tetap bulat
+        local size = data.Pos_JoyOuter.so
+        createCorner(JoyOuter, size)
+    end
+
+    -- 3. Clear Existing Buttons
     for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end
     Combos = {}
     for _, vData in pairs(ActiveVirtualKeys) do vData.Button:Destroy() end
     ActiveVirtualKeys = {}
     
-    -- 3. Restore Combos
+    -- 4. Restore Combos & Positions
     if data.Combos then
         for _, cData in ipairs(data.Combos) do
+            -- Buat tombolnya dulu
             CreateComboButtonFunc(cData.ID, cData.Steps)
+            -- Lalu paksa pindahkan ke posisi yang disimpan
+            local createdCombo = Combos[#Combos] -- Ambil combo yg baru dibuat
+            if createdCombo and cData.Layout then
+                applyLayout(createdCombo.Button, cData.Layout)
+            end
         end
     end
     
-    -- 4. Restore Virtual Keys
+    -- 5. Restore Virtual Keys & Positions
     if data.VirtualKeys then
         for _, vData in ipairs(data.VirtualKeys) do
+            -- Buat tombolnya dulu
             toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
+            -- Cari tombol yg baru dibuat di ActiveVirtualKeys
+            local createdKey = ActiveVirtualKeys[vData.ID]
+            if createdKey and vData.Layout then
+                -- Paksa pindahkan ke posisi yang disimpan
+                applyLayout(createdKey.Button, vData.Layout)
+                -- Update corner radius jika ukurannya berubah (opsional, agar tetap rapi)
+                if vData.Layout.so then createCorner(createdKey.Button, 12) end
+            end
         end
     end
     
-    -- 5. Restore Keybinds
+    -- 6. Restore PC Keybinds
     Keybinds = {}
     if data.Keybinds then
         for id, keyName in pairs(data.Keybinds) do
