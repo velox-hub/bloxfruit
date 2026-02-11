@@ -357,9 +357,9 @@ local function executeComboSequence(idx)
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     -- Simulasi Tahan M1
                     local vp = Camera.ViewportSize
-                    VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- Touch Down
+                    VIM:SendTouchEvent(5, 0, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y) -- Touch Down
                     task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- Touch Up
+                    VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y) -- Touch Up
                 else
                     -- Jika Mode Tap Biasa
                     TapM1()
@@ -375,7 +375,7 @@ local function executeComboSequence(idx)
         
         -- [CLEANUP] 
         local vp = Camera.ViewportSize
-        VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) 
+        VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
         isRunning = false
         SelectedComboID = nil 
         
@@ -436,20 +436,20 @@ NotifContainer.Parent = ScreenGui
 NotifContainer.ZIndex = 6000
 
 -- TOGGLE & WINDOW
-ToggleBtn = Instance.new("TextButton")
-ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
+ToggleBtn = Instance.new("ImageButton")
+ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
-ToggleBtn.BackgroundColor3 = Theme.Sidebar
-ToggleBtn.Text = "R"
-ToggleBtn.TextColor3 = Theme.Accent
-ToggleBtn.Font = Enum.Font.GothamBlack
-ToggleBtn.TextSize = 24
+ToggleBtn.BackgroundColor3 = Theme.Sidebar -- Kotak latar belakang gelap
+ToggleBtn.BackgroundTransparency = 0.2 -- Sedikit transparan
+ToggleBtn.Image = "rbxthumb://type=Asset&id=125170945964970&w=420&h=420" 
+ToggleBtn.ImageColor3 = Color3.fromRGB(255, 255, 255) 
 ToggleBtn.Parent = ScreenGui
-ToggleBtn.ZIndex = 200
+ToggleBtn.ZIndex = 501
 ToggleBtn.Selectable = false
 createCorner(ToggleBtn, 12)
 createStroke(ToggleBtn, Theme.Accent)
 MakeDraggable(ToggleBtn, nil)
+ToggleBtn.MouseButton1Click:Connect(function() Window.Visible = not Window.Visible end)
 
 local Window = Instance.new("Frame")
 Window.Size = UDim2.new(0, 600, 0, 340)
@@ -458,9 +458,17 @@ Window.BackgroundColor3 = Theme.Bg
 Window.Visible = true
 Window.Parent = ScreenGui
 Window.ZIndex = 100
+Window.Active = true
 createCorner(Window, 10)
 createStroke(Window, Theme.Accent)
-MakeDraggable(Window, nil)
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 40) -- Tinggi area geser (bagian atas menu)
+TopBar.BackgroundTransparency = 1
+TopBar.Parent = Window
+TopBar.ZIndex = 110 -- Di atas Window
+
+MakeDraggable(TopBar, function() end)
 
 ToggleBtn.MouseButton1Click:Connect(function() Window.Visible = not Window.Visible end)
 
@@ -881,7 +889,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         
                         -- 4. HOLD M1 (Simulasi Jari Hantu Menahan Layar)
                         local vp = Camera.ViewportSize
-                        VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- 0 = TouchBegin (Tahan)
+                        VIM:SendTouchEvent(5, 0, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y) -- 0 = TouchBegin (Tahan)
                         
                         -- Visual Efek (Warna berubah saat ditahan)
                         btn.BackgroundColor3 = Theme.Accent
@@ -903,7 +911,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 if isSkillKey and SkillMode == "INSTANT" then
                     -- LEPAS M1 (Simulasi Jari Hantu Diangkat)
                     local vp = Camera.ViewportSize
-                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- 2 = TouchEnd (Lepas)
+                    VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y) -- 2 = TouchEnd (Lepas)
                 end
                 
                 -- Reset Warna Tombol (Visual)
