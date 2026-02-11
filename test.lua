@@ -1,7 +1,7 @@
 -- ==============================================================================
--- [ VELOX V2.4 - CORE EDITION ]
--- Features: 1-4 Toggle, Z-F Skills, M1 Tap, Dodge, Jump UI
--- Optimized: Multi-Touch (No Joystick Interruption)
+-- [ VELOX V2.5 - DODGE & JUMP RECOVERY ]
+-- Fix: Dodge & Jump kembali menggunakan TriggerContext & UI Path (Metode Awal)
+-- Keep: 1-4, Z-F, dan M1 yang sudah stabil.
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -17,7 +17,7 @@ local Camera = workspace.CurrentCamera
 local Theme = {
     Bg      = Color3.fromRGB(20, 20, 25),
     Sidebar = Color3.fromRGB(30, 30, 35),
-    Accent  = Color3.fromRGB(0, 255, 180), -- Teal Green
+    Accent  = Color3.fromRGB(0, 255, 180),
     Text    = Color3.fromRGB(240, 240, 240),
     Red     = Color3.fromRGB(255, 80, 80),
     Blue    = Color3.fromRGB(50, 150, 255),
@@ -27,9 +27,8 @@ local Theme = {
 -- VARIABLES
 local ActiveVirtualKeys = {} 
 local ScreenGui = nil
-local IsLayoutLocked = false
 
--- DATA SENJATA (ToolTip Based)
+-- DATA SENJATA
 local WeaponData = {
     [1] = {type = "Melee", tooltip = "Melee"},
     [2] = {type = "Fruit", tooltip = "Blox Fruit"},
@@ -38,26 +37,31 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [1] UTILITY: MULTI-TOUCH SIMULATOR
+-- [1] UTILITY: FIRE UI (METODE AWAL)
 -- ==============================================================================
-
-local function MultiTouch(id, x, y)
-    VirtualInputManager:SendTouchEvent(id, 0, x, y) -- Begin
-    task.wait(0.02)
-    VirtualInputManager:SendTouchEvent(id, 2, x, y) -- End
-end
 
 local function FireUI(btn)
     if not btn then return end
+    
+    -- Memicu semua koneksi yang mungkin ada pada tombol UI mobile
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
     for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
+    
+    -- Simulasi input began/end untuk tombol yang butuh pressure (seperti Jump)
+    for _, c in pairs(getconnections(btn.InputBegan)) do 
+        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.Begin})
+    end
+    task.wait(0.05)
+    for _, c in pairs(getconnections(btn.InputEnded)) do 
+        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.End})
+    end
 end
 
 -- ==============================================================================
 -- [2] CORE LOGIC
 -- ==============================================================================
 
--- [A] TOGGLE EQUIP (1-4)
+-- [A] EQUIP TOGGLE (STABIL)
 local function EquipToggle(slotIdx)
     local char = LocalPlayer.Character; if not char then return end
     local hum = char:FindFirstChild("Humanoid"); if not hum then return end
@@ -75,7 +79,7 @@ local function EquipToggle(slotIdx)
     end
 end
 
--- [B] SKILLS (Z-F)
+-- [B] SKILLS Z-F (STABIL)
 local function UseSkill(key)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local Frame = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
@@ -89,39 +93,38 @@ local function UseSkill(key)
     end
 end
 
--- [C] DODGE (CONTEXT BUTTON)
+-- [C] DODGE (METODE AWAL)
 local function TriggerDodge()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local Ctx = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
-    if Ctx then
-        local Dodge = Ctx:FindFirstChild("BoundActionDodge")
-        if Dodge and Dodge:FindFirstChild("Button") then
-            FireUI(Dodge.Button)
+    local CtxFrame = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
+    if CtxFrame then
+        for _, frame in pairs(CtxFrame:GetChildren()) do
+            if frame.Name:find("BoundAction") and frame.Name:find("Dodge") then
+                FireUI(frame:FindFirstChild("Button"))
+                return
+            end
         end
     end
 end
 
--- [D] JUMP (UI COORDINATE TOUCH)
-local function TriggerJump()
+-- [D] JUMP (METODE AWAL - UI PATH)
+local function TriggerJumpUI()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local JumpBtn = PGui and PGui:FindFirstChild("TouchGui") and PGui.TouchGui:FindFirstChild("TouchControlFrame") and PGui.TouchGui.TouchControlFrame:FindFirstChild("JumpButton")
+    local TouchGui = PGui and PGui:FindFirstChild("TouchGui")
+    local JumpBtn = TouchGui and TouchGui:FindFirstChild("TouchControlFrame") and TouchGui.TouchControlFrame:FindFirstChild("JumpButton")
     
-    if JumpBtn and JumpBtn.Visible then
-        local pos = JumpBtn.AbsolutePosition
-        local size = JumpBtn.AbsoluteSize
-        MultiTouch(10, pos.X + (size.X/2), pos.Y + (size.Y/2))
-    else
-        -- Fallback Humanoid
-        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
-            LocalPlayer.Character.Humanoid.Jump = true
-        end
+    if JumpBtn then
+        FireUI(JumpBtn)
     end
 end
 
--- [E] M1 (CENTER SCREEN TOUCH)
+-- [E] M1 (INVISIBLE TAP STABIL)
 local function TapM1()
-    local view = Camera.ViewportSize
-    MultiTouch(11, view.X / 2, view.Y / 2)
+    local viewport = Camera.ViewportSize
+    local x, y = viewport.X / 2, viewport.Y / 2
+    VirtualInputManager:SendTouchEvent(11, 0, x, y)
+    task.wait(0.02)
+    VirtualInputManager:SendTouchEvent(11, 2, x, y)
 end
 
 -- ==============================================================================
@@ -135,10 +138,8 @@ local function MakeDraggable(guiObject)
     local dragging, dragInput, dragStart, startPos
     guiObject.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if not IsLayoutLocked then 
-                dragging = true; dragStart = input.Position; startPos = guiObject.Position
-                input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
-            end
+            dragging = true; dragStart = input.Position; startPos = guiObject.Position
+            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
         end
     end)
     guiObject.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end end)
@@ -168,12 +169,12 @@ local function AddBtn(id, text, callback, size, color)
         btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Theme.Bg; callback()
         task.delay(0.1, function() btn.BackgroundColor3 = color or Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent end)
     end)
-    MakeDraggable(btn); ActiveVirtualKeys[id] = {Button = btn}
+    MakeDraggable(btn)
     return btn
 end
 
 -- ==============================================================================
--- [4] FINAL LAYOUT
+-- [4] FINAL LAYOUT SETUP
 -- ==============================================================================
 
 -- Weapons
@@ -189,13 +190,11 @@ AddBtn("C", "C", function() UseSkill("C") end).Position = UDim2.new(0.8, 0, 0.55
 AddBtn("V", "V", function() UseSkill("V") end).Position = UDim2.new(0.65, 0, 0.65, 0)
 AddBtn("F", "F", function() UseSkill("F") end).Position = UDim2.new(0.75, 0, 0.65, 0)
 
--- Actions
-local m1 = AddBtn("M1", "M1", TapM1, UDim2.new(0, 60, 0, 60), Theme.Red)
-m1.Position = UDim2.new(0.9, 0, 0.25, 0)
+-- M1 (Top Thumb)
+AddBtn("M1", "M1", TapM1, UDim2.new(0, 60, 0, 60), Theme.Red).Position = UDim2.new(0.9, 0, 0.25, 0)
 
+-- Dodge & Jump (Metode UI Awal)
 AddBtn("Dodge", "DG", TriggerDodge).Position = UDim2.new(0.85, 0, 0.65, 0)
+AddBtn("Jump", "JP", TriggerJumpUI, UDim2.new(0, 60, 0, 60), Theme.Blue).Position = UDim2.new(0.9, 0, 0.7, 0)
 
-local jmp = AddBtn("Jump", "JP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
-jmp.Position = UDim2.new(0.9, 0, 0.7, 0)
-
-print("Velox v2.4 Loaded")
+print("Velox v2.5 Loaded: Dodge & Jump UI Fixed")
