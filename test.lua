@@ -1,7 +1,7 @@
 -- ==============================================================================
--- [ VELOX LITE - ESSENTIALS ONLY ]
--- Features: 1-4 (Toggle), Z-F, M1 (Tap), Dodge.
--- Removed: Jump, Soru, Haki, Bloat.
+-- [ VELOX LITE - CENTER M1 FIX ]
+-- Features: 1-4 (Toggle), Z-F, Dodge.
+-- Fix: M1 taps perfectly in the center of the ScreenGui.
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -10,13 +10,13 @@ local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 
--- CONFIG
+-- UI CONFIG
 local Theme = {
     Bg = Color3.fromRGB(20, 20, 25),
     Accent = Color3.fromRGB(0, 255, 180),
-    Text = Color3.fromRGB(240, 240, 240)
+    Text = Color3.fromRGB(240, 240, 240),
+    Red = Color3.fromRGB(255, 80, 80)
 }
 
 local WeaponData = {
@@ -24,20 +24,80 @@ local WeaponData = {
     [3] = {tooltip = "Sword"}, [4] = {tooltip = "Gun"}
 }
 
+-- SETUP MAIN GUI FIRST (Agar bisa dipakai hitung tengah layar)
+if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
+local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
+-- Penting: IgnoreGuiInset memastikan kita dapat ukuran layar penuh tanpa terpotong topbar
+ScreenGui.IgnoreGuiInset = true 
+
 -- ==============================================================================
--- [1] UTILITIES
+-- [1] CORE LOGIC
 -- ==============================================================================
 
+-- M1 (PERFECT CENTER TAP)
+local function TapM1()
+    -- Kita gunakan ukuran absolut dari GUI kita sendiri untuk mencari tengah
+    local centerPos = ScreenGui.AbsoluteSize / 2
+    local x, y = centerPos.X, centerPos.Y
+    
+    -- Gunakan Touch ID 5 (Jari "Hantu") agar tidak mengganggu analog
+    VirtualInputManager:SendTouchEvent(5, 0, x, y) -- Begin
+    task.wait() -- Tunggu 1 frame agar input terbaca oleh game
+    VirtualInputManager:SendTouchEvent(5, 2, x, y) -- End
+end
+
+-- 1-4 TOGGLE EQUIP
+local function ToggleEquip(slot)
+    local char = LocalPlayer.Character; if not char then return end
+    local hum = char:FindFirstChild("Humanoid"); if not hum then return end
+    local target = WeaponData[slot].tooltip
+    
+    local current = char:FindFirstChildOfClass("Tool")
+    if current and current.ToolTip == target then
+        hum:UnequipTools()
+    else
+        for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
+            if t:IsA("Tool") and t.ToolTip == target then hum:EquipTool(t); break end
+        end
+    end
+end
+
+-- SKILLS (Z-F) & DODGE UTILITY
 local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
     for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
-    for _, c in pairs(getconnections(btn.InputBegan)) do 
-        c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin})
-        task.wait()
-        c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.End})
+end
+
+local function TriggerSkill(key)
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local Skills = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
+    if Skills then
+        for _, f in pairs(Skills:GetChildren()) do
+            if f:IsA("Frame") and f.Visible and f:FindFirstChild(key) then
+                FireUI(f[key]:FindFirstChild("Mobile") or f[key])
+                return
+            end
+        end
     end
 end
+
+local function TriggerDodge()
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local Ctx = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
+    if Ctx then
+        for _, f in pairs(Ctx:GetChildren()) do
+            if f.Name:find("BoundAction") and f.Name:find("Dodge") then
+                FireUI(f:FindFirstChild("Button"))
+                return
+            end
+        end
+    end
+end
+
+-- ==============================================================================
+-- [2] UI BUILDER FUNCTIONS
+-- ==============================================================================
 
 local function MakeDraggable(guiObject)
     local dragging, dragInput, dragStart, startPos
@@ -55,69 +115,6 @@ local function MakeDraggable(guiObject)
         end
     end)
 end
-
--- ==============================================================================
--- [2] CORE LOGIC
--- ==============================================================================
-
--- 1-4 TOGGLE
-local function ToggleEquip(slot)
-    local char = LocalPlayer.Character; if not char then return end
-    local hum = char:FindFirstChild("Humanoid"); if not hum then return end
-    local target = WeaponData[slot].tooltip
-    
-    local current = char:FindFirstChildOfClass("Tool")
-    if current and current.ToolTip == target then
-        hum:UnequipTools()
-    else
-        for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-            if t:IsA("Tool") and t.ToolTip == target then hum:EquipTool(t); break end
-        end
-    end
-end
-
--- SKILLS (Z-F)
-local function TriggerSkill(key)
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local Skills = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
-    if Skills then
-        for _, f in pairs(Skills:GetChildren()) do
-            if f:IsA("Frame") and f.Visible and f:FindFirstChild(key) then
-                FireUI(f[key]:FindFirstChild("Mobile") or f[key])
-                return
-            end
-        end
-    end
-end
-
--- DODGE (Context Button)
-local function TriggerDodge()
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    local Ctx = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
-    if Ctx then
-        for _, f in pairs(Ctx:GetChildren()) do
-            if f.Name:find("BoundAction") and f.Name:find("Dodge") then
-                FireUI(f:FindFirstChild("Button"))
-                return
-            end
-        end
-    end
-end
-
--- M1 (Invisible Tap - ID 5)
-local function TapM1()
-    local v = Camera.ViewportSize
-    VirtualInputManager:SendTouchEvent(5, 0, v.X/2, v.Y/2)
-    task.wait(0.01)
-    VirtualInputManager:SendTouchEvent(5, 2, v.X/2, v.Y/2)
-end
-
--- ==============================================================================
--- [3] UI BUILDER
--- ==============================================================================
-
-if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
-local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
 
 local function CreateBtn(text, func, size, color, pos)
     local btn = Instance.new("TextButton")
@@ -142,7 +139,7 @@ local function CreateBtn(text, func, size, color, pos)
 end
 
 -- ==============================================================================
--- [4] LAYOUT
+-- [3] LAYOUT
 -- ==============================================================================
 
 -- Weapons
@@ -159,7 +156,7 @@ CreateBtn("V", function() TriggerSkill("V") end, UDim2.new(0,45,0,45), Theme.Bg,
 CreateBtn("F", function() TriggerSkill("F") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.77,0,0.65,0))
 
 -- Actions
-CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Color3.fromRGB(200, 50, 50), UDim2.new(0.9,0,0.25,0))
+CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Theme.Red, UDim2.new(0.9,0,0.25,0))
 CreateBtn("Dodge", TriggerDodge, UDim2.new(0,50,0,50), Theme.Bg, UDim2.new(0.89,0,0.55,0))
 
-print("Velox Lite: Essential Loaded")
+print("Velox Lite: Center Tap Fixed")
