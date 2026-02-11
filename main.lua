@@ -1,5 +1,6 @@
 -- ==============================================================================
--- [1] SERVICES & VARIABLES
+-- [ VELOX V1.3.6 OPTIMIZED ]
+-- Fixed Memory Leaks, Improved Input Handling, Safer Save System
 -- ==============================================================================
 
 local VIM = game:GetService("VirtualInputManager")
@@ -8,8 +9,9 @@ local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
-local Camera = workspace.CurrentCamera
+local Workspace = game:GetService("Workspace")
 
+local Camera = Workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local FileName = "Velox_Config.json"
 
@@ -37,6 +39,7 @@ local isRunning = false
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
 local IsJoystickEnabled = false 
+local JoyConnection = nil -- Variable untuk menyimpan koneksi RenderStepped
 
 local Combos = {} 
 local CurrentComboIndex = 0 
@@ -50,14 +53,13 @@ local SkillMode = "INSTANT"
 local CurrentSmartKeyData = nil 
 local SelectedComboID = nil 
 
--- EDITOR & RESIZER VARS
+-- UI VARIABLES
 local ResizerList = {}
 local CurrentSelectedElement = nil
-local ResizerUpdateFunc = nil 
-local UpdateTransparencyFunc = nil 
-local RefreshEditorUI = nil 
-local RefreshControlUI = nil
-local CreateComboButtonFunc = nil 
+local ScreenGui = nil
+
+-- FORWARD DECLARATIONS
+local ResizerUpdateFunc, UpdateTransparencyFunc, RefreshEditorUI, RefreshControlUI, CreateComboButtonFunc
 
 local WeaponData = {
     {name = "Melee", slot = 1, color = Color3.fromRGB(255, 140, 0), tooltip = "Melee", keys = {"Z", "X", "C"}},
@@ -121,7 +123,7 @@ end
 -- [3] CORE LOGIC & MANAGERS
 -- ==============================================================================
 
-local JoyOuter, JoyKnob, JoyDrag, ToggleBtn, JoyContainer, LockBtn, ScreenGui
+local JoyOuter, JoyKnob, JoyDrag, ToggleBtn, JoyContainer, LockBtn
 
 UpdateTransparencyFunc = function()
     local t = GlobalTransparency
@@ -204,11 +206,12 @@ local function pressKey(k, isHold, holdDur)
         task.wait(holdDur)
         VIM:SendKeyEvent(false, k, false, game)
     else
-        for i=1,3 do 
+        -- Optimasi: 2x press cukup, 3x kadang bikin lag
+        for i=1,2 do 
             VIM:SendKeyEvent(true, k, false, game)
             task.wait(0.05)
             VIM:SendKeyEvent(false, k, false, game)
-            if i < 3 then task.wait(0.03) end 
+            task.wait(0.05)
         end
     end
 end
@@ -231,16 +234,15 @@ local function equipWeapon(slotIdx)
     local hum = char:FindFirstChild("Humanoid")
     if not hum then return end
 
-    -- Ambil Tipe Senjata yang dituju (misal: "Melee", "Blox Fruit", "Sword")
     local targetTip = WeaponData[slotIdx].tooltip
-
-    -- 1. Cek apakah kita sudah memegang senjata itu?
     local current = char:FindFirstChildOfClass("Tool")
+    
+    -- Cek jika sudah equip
     if current and current.ToolTip == targetTip then
-        return -- Sudah terpasang, tidak perlu ngapa-ngapain
+        return 
     end
 
-    -- 2. Cari senjata tersebut di Backpack (Tas)
+    -- Cari di Backpack
     local foundTool = nil
     for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
         if t:IsA("Tool") and t.ToolTip == targetTip then
@@ -249,15 +251,14 @@ local function equipWeapon(slotIdx)
         end
     end
 
-    -- 3. EKSEKUSI LANGSUNG (Sama cepatnya dengan Remote)
     if foundTool then
-        hum:EquipTool(foundTool) -- Memaksa karakter memegang alat ini
+        hum:EquipTool(foundTool)
     else
-        -- Fallback: Jika tidak ketemu (misal nama beda), baru pakai tombol keyboard
+        -- Fallback: Key press jika tool tidak ketemu di backpack (mungkin lag)
         local s = WeaponData[slotIdx].slot
         local key = s==1 and Enum.KeyCode.One or s==2 and Enum.KeyCode.Two or s==3 and Enum.KeyCode.Three or Enum.KeyCode.Four
         VIM:SendKeyEvent(true, key, false, game)
-        task.wait()
+        task.wait(0.1) -- Sedikit delay agar register
         VIM:SendKeyEvent(false, key, false, game)
     end
 end
@@ -272,6 +273,9 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
+    -- Prevent overlapping combos
+    if isRunning then return end
+
     isRunning = true
     local btn = data.Button
     btn:SetAttribute("OrigText", btn.Text)
@@ -289,13 +293,17 @@ local function executeComboSequence(idx)
                 break 
             end
             
-            if not isWeaponReady(step.Slot) then equipWeapon(step.Slot) end
+            -- Pastikan senjata ter-equip sebelum menekan skill
+            if not isWeaponReady(step.Slot) then 
+                equipWeapon(step.Slot)
+                task.wait(0.1) -- Delay kecil transisi senjata
+            end
             
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
             
             local map = {Z=Enum.KeyCode.Z, X=Enum.KeyCode.X, C=Enum.KeyCode.C, V=Enum.KeyCode.V, F=Enum.KeyCode.F}
             pressKey(map[step.Key], step.IsHold, step.HoldTime or 0.1)
-            task.wait(0.3)
+            task.wait(0.25)
         end
         
         isRunning = false
@@ -365,6 +373,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             task.spawn(function()
                 if CurrentSmartKeyData.Slot and not isWeaponReady(CurrentSmartKeyData.Slot) then 
                     equipWeapon(CurrentSmartKeyData.Slot) 
+                    task.wait(0.05)
                 end
                 
                 VIM:SendKeyEvent(true, CurrentSmartKeyData.Key, false, game)
@@ -414,7 +423,7 @@ ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Size = UDim2.new(0, 45, 0, 45)
 ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
 ToggleBtn.BackgroundColor3 = Theme.Sidebar
-ToggleBtn.Text = "R"
+ToggleBtn.Text = "V"
 ToggleBtn.TextColor3 = Theme.Accent
 ToggleBtn.Font = Enum.Font.GothamBlack
 ToggleBtn.TextSize = 24
@@ -631,17 +640,14 @@ GFrame.ScrollBarThickness = 4
 GFrame.ScrollingDirection = Enum.ScrollingDirection.Y
 GFrame.Parent = P_Guide
 
-local GText = [[WELCOME TO VELOX V135!
+local GText = [[WELCOME TO VELOX V1.3.6 (Stable)!
 
 [ FEATURES ]
 • Custom Layout: Resize & Move ANY button.
 • Smart Cast: Tap skill -> Tap screen to fire.
 • Weapon Bind: Assign weapons to virtual keys.
 • PC Support: Keybinds for all functions.
-• Save System: Fully Working (Configs saved to file).
-
-[ CONTROLS ]
-Use the 'Controls' tab to set PC Keybinds and change Skill Mode.
+• Safe Save: Configurations are saved securely.
 
 [ JOYSTICK FIX ]
 Deadzone added to prevent accidental walking.
@@ -727,13 +733,13 @@ JoyOuter.InputBegan:Connect(function(i) if (i.UserInputType == Enum.UserInputTyp
 UserInputService.InputChanged:Connect(function(i) if i == moveTouch then local center = JoyOuter.AbsolutePosition + (JoyOuter.AbsoluteSize/2); local vec = Vector2.new(i.Position.X, i.Position.Y) - center; if vec.Magnitude > JoyOuter.AbsoluteSize.X/2 then vec = vec.Unit * (JoyOuter.AbsoluteSize.X/2) end; JoyKnob.Position = UDim2.new(0.5, vec.X - KNOB_SIZE/2, 0.5, vec.Y - KNOB_SIZE/2); moveDir = Vector2.new(vec.X/(JoyOuter.AbsoluteSize.X/2), vec.Y/(JoyOuter.AbsoluteSize.X/2)) end end)
 UserInputService.InputEnded:Connect(function(i) if i == moveTouch then moveTouch=nil; moveDir=Vector2.new(0,0); JoyKnob.Position = UDim2.new(0.5, -KNOB_SIZE/2, 0.5, -KNOB_SIZE/2) end end)
 
-RunService.RenderStepped:Connect(function()
+-- SAFE LOOP FOR JOYSTICK
+JoyConnection = RunService.RenderStepped:Connect(function()
     if not IsJoystickEnabled then return end
     if not LocalPlayer.Character then return end
     local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
     if not hum then return end
     
-    -- Deadzone Check
     if moveDir.Magnitude < DEADZONE then 
         hum:Move(Vector3.new(0,0,0), true)
         return
@@ -744,14 +750,6 @@ RunService.RenderStepped:Connect(function()
         if seat and seat:IsA("VehicleSeat") then
             if moveDir.Y < -0.2 then seat.Throttle = 1 elseif moveDir.Y > 0.2 then seat.Throttle = -1 else seat.Throttle = 0 end
             if moveDir.X > 0.2 then seat.Steer = 1 elseif moveDir.X < -0.2 then seat.Steer = -1 else seat.Steer = 0 end
-        else
-            if moveDir.Magnitude > 0 then
-                local cam = workspace.CurrentCamera
-                local flatLook = Vector3.new(cam.CFrame.LookVector.X, 0, cam.CFrame.LookVector.Z).Unit
-                local flatRight = Vector3.new(cam.CFrame.RightVector.X, 0, cam.CFrame.RightVector.Z).Unit
-                local moveVec = (flatLook * -moveDir.Y) + (flatRight * moveDir.X)
-                hum:Move(moveVec, false)
-            end
         end
     else
         if moveDir.Magnitude > 0 then
@@ -769,18 +767,14 @@ end)
 -- ==============================================================================
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
-    
-    -- Konversi ke string agar "1" (angka) dan "1" (teks) dianggap sama
     local sKey = tostring(keyName) 
     
-    -- Bersihkan tombol lama jika ada
     if ActiveVirtualKeys[id] then 
         ActiveVirtualKeys[id].Button:Destroy(); ActiveVirtualKeys[id]=nil
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Element; VirtualKeySelectors[id].TextColor3=Theme.Text end
         if SkillMode == "SMART" and CurrentSmartKeyData and CurrentSmartKeyData.ID == id then CurrentSmartKeyData = nil end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end; if RefreshControlUI then RefreshControlUI() end
     else
-        -- Buat Tombol Baru
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 50, 0, 50)
         btn.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -797,30 +791,20 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.ZIndex = 60
         MakeDraggable(btn, nil)
         
-        -- Mapping KeyCode yang lebih aman
         local kCode
         if sKey == "1" then kCode = Enum.KeyCode.One 
         elseif sKey == "2" then kCode = Enum.KeyCode.Two 
         elseif sKey == "3" then kCode = Enum.KeyCode.Three 
         elseif sKey == "4" then kCode = Enum.KeyCode.Four 
         elseif Enum.KeyCode[sKey] then kCode = Enum.KeyCode[sKey] 
-        else kCode = Enum.KeyCode.One end -- Fallback safety
+        else kCode = Enum.KeyCode.One end 
         
         local vData = {ID=id, Key=kCode, Slot=slotIdx, Button=btn}
-        
-        -- [LOGIKA KUNCI YANG DIPERBAIKI]
-        -- Menggunakan tostring(sKey) memastikan deteksi 100% akurat
         local isWeaponKey = (sKey == "1" or sKey == "2" or sKey == "3" or sKey == "4")
         
-        -- EVENT SAAT DITEKAN (InputBegan)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                
-                -- ====================================================
-                -- 1. PRIORITAS UTAMA: SENJATA (1-4) -> PASTI INSTANT
-                -- ====================================================
                 if isWeaponKey then
-                    -- Reset status Smart Skill jika ada yang sedang aktif (Hijau)
                     if CurrentSmartKeyData then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                         if old then 
@@ -830,33 +814,21 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         CurrentSmartKeyData = nil 
                     end
 
-                    -- LANGSUNG GANTI SENJATA (Bypass Mode Smart)
-                    if vData.Slot then 
-                        equipWeapon(vData.Slot) -- Memanggil fungsi equipWeapon
-                    end
+                    if vData.Slot then equipWeapon(vData.Slot) end
                     
-                    -- Efek Visual Klik Singkat (Opsional, agar terasa ditekan)
                     btn.BackgroundColor3 = Theme.Accent
                     btn.TextColor3 = Color3.new(0,0,0)
                     task.delay(0.05, function()
                         btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
                         btn.TextColor3 = Theme.Accent
                     end)
-
-                    return -- STOP DISINI! Jangan lanjut ke logika Skill di bawah
+                    return 
                 end
                 
-                -- ====================================================
-                -- 2. LOGIKA SKILL (Z, X, C, V, F...)
-                -- ====================================================
-                
                 if SkillMode == "INSTANT" then
-                    -- Mode Instant Skill
                     if vData.Slot then equipWeapon(vData.Slot) end
                     VIM:SendKeyEvent(true, kCode, false, game)
-                    
                 elseif SkillMode == "SMART" then
-                    -- Mode Smart Tap Skill (Pilih dulu baru tembak)
                     if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                         if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
@@ -875,11 +847,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
             end
         end)
 
-        -- EVENT SAAT DILEPAS (InputEnded)
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                -- Skill Instant perlu dilepas manual
-                -- Tombol senjata (1-4) TIDAK PERLU dilepas karena EquipTool sifatnya trigger sekali
                 if not isWeaponKey and SkillMode == "INSTANT" then
                     VIM:SendKeyEvent(false, kCode, false, game)
                 end
@@ -1188,7 +1157,6 @@ end
 -- ==============================================================================
 
 local function GetCurrentState()
-    -- Helper untuk mengambil Posisi & Ukuran
     local function getLayout(obj)
         return {
             px = obj.Position.X.Scale, po = obj.Position.X.Offset,
@@ -1199,47 +1167,29 @@ local function GetCurrentState()
     end
 
     local data = {
-        -- Global Settings
         Transparency = GlobalTransparency,
         JoystickEnabled = IsJoystickEnabled,
         SkillMode = SkillMode,
-        LayoutLocked = IsLayoutLocked, -- Simpan status Lock
-
-        -- UI Positions (Main Elements)
+        LayoutLocked = IsLayoutLocked,
         Pos_Window = getLayout(Window),
         Pos_Toggle = getLayout(ToggleBtn),
         Pos_Joy = getLayout(JoyContainer),
-        Pos_JoyOuter = getLayout(JoyOuter), -- Simpan ukuran joystick
-
-        -- Data Isi
+        Pos_JoyOuter = getLayout(JoyOuter),
         Combos = {},
         Keybinds = {},
         VirtualKeys = {}
     }
 
-    -- Simpan Data Combo + Posisi
     for _, combo in ipairs(Combos) do
-        table.insert(data.Combos, {
-            ID = combo.ID,
-            Name = combo.Name,
-            Steps = combo.Steps,
-            Layout = getLayout(combo.Button) -- Simpan Posisi Tombol Combo
-        })
+        table.insert(data.Combos, {ID = combo.ID, Name = combo.Name, Steps = combo.Steps, Layout = getLayout(combo.Button)})
     end
 
-    -- Simpan Keybinds PC
     for id, key in pairs(Keybinds) do
         data.Keybinds[id] = key.Name
     end
 
-    -- Simpan Virtual Keys (Skill/Senjata) + Posisi
     for id, vData in pairs(ActiveVirtualKeys) do
-        table.insert(data.VirtualKeys, {
-            ID = id,
-            KeyName = vData.Key.Name,
-            Slot = vData.Slot,
-            Layout = getLayout(vData.Button) -- Simpan Posisi Tombol Skill
-        })
+        table.insert(data.VirtualKeys, {ID = id, KeyName = vData.Key.Name, Slot = vData.Slot, Layout = getLayout(vData.Button)})
     end
 
     return data
@@ -1253,8 +1203,13 @@ local function SaveToFile(configName, data)
     end
     fullData[configName] = data
     fullData["LastUsed"] = configName
-    writefile(FileName, HttpService:JSONEncode(fullData))
-    ShowNotification("Saved: " .. configName, Theme.Green)
+    
+    local success, err = pcall(function() writefile(FileName, HttpService:JSONEncode(fullData)) end)
+    if success then
+        ShowNotification("Saved: " .. configName, Theme.Green)
+    else
+        ShowNotification("Save Failed", Theme.Red)
+    end
 end
 
 local function LoadSpecific(configName)
@@ -1264,23 +1219,19 @@ local function LoadSpecific(configName)
     
     local data = fileData[configName]
     
-    -- Helper untuk menerapkan Posisi & Ukuran
     local function applyLayout(obj, layoutData)
         if not obj or not layoutData then return end
         obj.Position = UDim2.new(layoutData.px, layoutData.po, layoutData.py, layoutData.poy)
         obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
     end
 
-    -- 1. Restore System Settings
     GlobalTransparency = data.Transparency or 0
     TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
     UpdateTransparencyFunc()
     
-    -- Restore Locked State
     IsLayoutLocked = data.LayoutLocked or false
     updateLockState()
 
-    -- Restore Joystick
     IsJoystickEnabled = data.JoystickEnabled or false
     JoyContainer.Visible = IsJoystickEnabled
     if IsJoystickEnabled then 
@@ -1291,7 +1242,6 @@ local function LoadSpecific(configName)
         JoyToggle.BackgroundColor3 = Theme.Red
     end
 
-    -- Restore Skill Mode
     SkillMode = data.SkillMode or "INSTANT"
     if SkillMode == "SMART" then 
         ModeBtn.Text = "SKILL MODE: SMART TAP"
@@ -1301,53 +1251,40 @@ local function LoadSpecific(configName)
         ModeBtn.BackgroundColor3 = Theme.Green
     end
 
-    -- 2. Restore Main UI Positions
     if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
     if data.Pos_Toggle then applyLayout(ToggleBtn, data.Pos_Toggle) end
     if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
     if data.Pos_JoyOuter then 
         applyLayout(JoyOuter, data.Pos_JoyOuter)
-        -- Update corner radius joystick agar tetap bulat
-        local size = data.Pos_JoyOuter.so
-        createCorner(JoyOuter, size)
+        createCorner(JoyOuter, data.Pos_JoyOuter.so)
     end
 
-    -- 3. Clear Existing Buttons
     for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end
     Combos = {}
     for _, vData in pairs(ActiveVirtualKeys) do vData.Button:Destroy() end
     ActiveVirtualKeys = {}
     
-    -- 4. Restore Combos & Positions
     if data.Combos then
         for _, cData in ipairs(data.Combos) do
-            -- Buat tombolnya dulu
             CreateComboButtonFunc(cData.ID, cData.Steps)
-            -- Lalu paksa pindahkan ke posisi yang disimpan
-            local createdCombo = Combos[#Combos] -- Ambil combo yg baru dibuat
+            local createdCombo = Combos[#Combos]
             if createdCombo and cData.Layout then
                 applyLayout(createdCombo.Button, cData.Layout)
             end
         end
     end
     
-    -- 5. Restore Virtual Keys & Positions
     if data.VirtualKeys then
         for _, vData in ipairs(data.VirtualKeys) do
-            -- Buat tombolnya dulu
             toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
-            -- Cari tombol yg baru dibuat di ActiveVirtualKeys
             local createdKey = ActiveVirtualKeys[vData.ID]
             if createdKey and vData.Layout then
-                -- Paksa pindahkan ke posisi yang disimpan
                 applyLayout(createdKey.Button, vData.Layout)
-                -- Update corner radius jika ukurannya berubah (opsional, agar tetap rapi)
                 if vData.Layout.so then createCorner(createdKey.Button, 12) end
             end
         end
     end
     
-    -- 6. Restore PC Keybinds
     Keybinds = {}
     if data.Keybinds then
         for id, keyName in pairs(data.Keybinds) do
@@ -1396,21 +1333,17 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
         local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
         
         yes.MouseButton1Click:Connect(function()
-            -- 1. LEPASKAN TOMBOL YANG TERSANGKUT (SAFETY)
             for _, vData in pairs(ActiveVirtualKeys) do
-                VIM:SendKeyEvent(false, vData.Key, false, game) -- Paksa lepas key
+                VIM:SendKeyEvent(false, vData.Key, false, game)
                 if vData.Button then vData.Button:Destroy() end
             end
             ActiveVirtualKeys = {}
-            
-            -- 2. HAPUS SEMUA COMBO
             for _, c in pairs(Combos) do 
                 if c.Button then c.Button:Destroy() end 
             end
             Combos = {}
-            CurrentComboIndex = 0 -- Reset index agar editor kosong
+            CurrentComboIndex = 0
             
-            -- 3. RESET VARIABLE SYSTEM
             Keybinds = {}
             CurrentConfigName = nil
             SkillMode = "INSTANT"
@@ -1420,7 +1353,6 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
             SelectedComboID = nil
             IsLayoutLocked = false
             
-            -- 4. RESET VISUAL (TRANSPARANSI & JOYSTICK)
             GlobalTransparency = 0
             TKnob.Position = UDim2.new(0, -6, 0.5, -6)
             IsJoystickEnabled = false
@@ -1428,31 +1360,24 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
             JoyToggle.Text = "JOYSTICK: OFF"
             JoyToggle.BackgroundColor3 = Theme.Red
             
-            -- 5. KEMBALIKAN POSISI UI KE DEFAULT (FACTORY RESET)
             Window.Position = UDim2.new(0.5, -300, 0.5, -170)
             ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
             JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
             
-            -- Reset Ukuran Joystick ke Awal
             local defJoySize = 140
             JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
             JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
             createCorner(JoyOuter, defJoySize)
 
-            -- 6. RESET WARNA TOMBOL PILIHAN DI TAB LAYOUT
-            -- (Agar tombol 1,2,3.. Z,X.. kembali jadi abu-abu/tidak hijau)
             for k, btn in pairs(VirtualKeySelectors) do
                 btn.BackgroundColor3 = Theme.Element
                 btn.TextColor3 = Theme.Text
             end
 
-            -- 7. REFRESH SEMUA TAMPILAN
             UpdateTransparencyFunc()
             updateLockState()
             if ResizerUpdateFunc then ResizerUpdateFunc() end
             RefreshControlUI()
-            
-            -- Refresh Editor agar kembali kosong (Teks "Go to LAYOUT tab...")
             RefreshEditorUI() 
 
             ShowNotification("Factory Reset Complete!", Theme.Accent)
@@ -1470,8 +1395,9 @@ local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function()
         local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
         
         yes.MouseButton1Click:Connect(function() 
-            isRunning = false -- Matikan loop combo
-            if ScreenGui then ScreenGui:Destroy() end -- Hapus UI
+            isRunning = false 
+            if JoyConnection then JoyConnection:Disconnect() end -- PENTING: Matikan loop joystick
+            if ScreenGui then ScreenGui:Destroy() end
         end)
         
         no.MouseButton1Click:Connect(ClosePopup)
