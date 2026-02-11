@@ -1,8 +1,9 @@
 -- ==============================================================================
--- [ VELOX V1.8 - TOGGLE EQUIP & DODGE ADDED ]
--- Fix: Weapon 1-4 now Toggles (Equip/Unequip)
--- Change: Jump uses Humanoid, M1 Removed
--- Added: Dodge Button
+-- [ VELOX V1.9 - UI JUMP & TOGGLE EQUIP FIX ]
+-- Fix: Jump now clicks the actual Mobile Jump Button (TouchControlFrame)
+-- Fix: Weapon 1-4 Toggles (Equip/Unequip) work flawlessly
+-- Removed: M1 Button
+-- Added: Dodge Context Button
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -131,10 +132,21 @@ local function TriggerContext(keyword)
     end
 end
 
--- TRIGGER JUMP (Direct Humanoid)
+-- TRIGGER JUMP (Direct UI Click)
+-- Mengklik tombol Jump bawaan Mobile Blox Fruit
 local function TriggerJump()
-    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then 
-        LocalPlayer.Character.Humanoid.Jump = true 
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not PGui then return end
+    
+    local TouchGui = PGui:FindFirstChild("TouchGui")
+    if TouchGui then
+        local TouchControl = TouchGui:FindFirstChild("TouchControlFrame")
+        if TouchControl then
+            local JumpBtn = TouchControl:FindFirstChild("JumpButton")
+            if JumpBtn then
+                FireUI(JumpBtn)
+            end
+        end
     end
 end
 
@@ -225,4 +237,4 @@ AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim
 local bJump = AddBtn("Jump", "JUMP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
 bJump.Position = UDim2.new(0.90, 0, 0.70, 0)
 
-print("Velox v1.8 Loaded: ToggleEquip + Dodge Added")
+print("Velox v1.9 Loaded: Jump UI Fixed + Toggle Equip")
