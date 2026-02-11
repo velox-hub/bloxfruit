@@ -36,6 +36,11 @@ local DEADZONE = 0.15
 local isRunning = false 
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
+-- [TAMBAHAN BARU] Variable Kalibrasi & Dash
+local M1_Offset = Vector2.new(0, 0) -- Posisi X, Y tambahan dari tengah layar
+local ShowCrosshair = false -- Untuk visualisasi saat setting
+local IsAutoDashing = false -- Status Auto Dash
+local CrosshairUI = nil -- Wadah visual crosshair
 local IsJoystickEnabled = false 
 
 local Combos = {} 
@@ -202,9 +207,10 @@ end
 
 local function TapM1()
     local vp = Camera.ViewportSize
-    local x, y = vp.X / 2, vp.Y / 2
+    local x = (vp.X / 2) + M1_Offset.X
+    local y = (vp.Y / 2) + M1_Offset.Y
     VIM:SendTouchEvent(5, 0, x, y) 
-    task.wait(0.01)
+    task.wait(0.02)
     VIM:SendTouchEvent(5, 2, x, y)
 end
 
@@ -623,9 +629,8 @@ local P_Edit = Instance.new("Frame"); P_Edit.Size=UDim2.new(1,0,0.85,0); P_Edit.
 local P_Lay = Instance.new("ScrollingFrame")
 P_Lay.Size=UDim2.new(1,0,0.85,0); P_Lay.Position=UDim2.new(0,0,0.15,0); P_Lay.BackgroundTransparency=1; P_Lay.Visible=false; P_Lay.ScrollBarThickness=4; P_Lay.Parent=Content; Pages["Layout"]=P_Lay
 P_Lay.ScrollingDirection = Enum.ScrollingDirection.Y 
-
+local P_Set = Instance.new("Frame"); P_Set.Size=UDim2.new(1,0,0.85,0); P_Set.Position=UDim2.new(0,0,0.15,0); P_Set.BackgroundTransparency=1; P_Set.Visible=false; P_Set.Parent=Content; Pages["Settings"]=P_Set
 local P_Sys = Instance.new("Frame"); P_Sys.Size=UDim2.new(1,0,0.85,0); P_Sys.Position=UDim2.new(0,0,0.15,0); P_Sys.BackgroundTransparency=1; P_Sys.Visible=false; P_Sys.Parent=Content; Pages["System"]=P_Sys
-
 -- NAV ORDER
 local NavGuide = mkNav("ℹ️", "GUIDE", "Guide", "GUIDE & INFO")
 NavGuide.TextColor3 = Theme.Accent
@@ -634,8 +639,8 @@ NavGuide.BackgroundTransparency = 0
 
 mkNav("⚔️", "COMBO", "Editor", "COMBO EDITOR")
 mkNav("🛠️", "LAYOUT", "Layout", "LAYOUT SETTINGS")
+mkNav("🔧", "SETTINGS", "Settings", "CALIBRATION & SETTINGS")
 mkNav("⚙️", "SYSTEM", "System", "SYSTEM MANAGER")
-
 -- ==============================================================================
 -- [6] GUIDE TAB CONTENT
 -- ==============================================================================
@@ -831,7 +836,24 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 
                 -- A. LOGIKA KHUSUS M1 & DODGE (Prioritas Tertinggi)
                 if id == "M1" then TapM1() return end
-                if id == "Dodge" then TriggerDodge() return end
+                if id == "Dodge" then 
+                    IsAutoDashing = true
+                    -- Ubah warna tombol jadi hijau saat ditahan
+                    btn.BackgroundColor3 = Theme.Green
+                    btn.TextColor3 = Theme.Bg
+                    
+                    task.spawn(function()
+                        while IsAutoDashing do
+                            TriggerDodge()
+                            -- Cooldown agar tidak spam parah (sesuaikan jika perlu, misal 0.1)
+                            task.wait(0.15) 
+                        end
+                        -- Reset warna saat loop berhenti
+                        btn.BackgroundColor3 = Color3.new(0,0,0)
+                        btn.TextColor3 = Theme.Accent
+                    end)
+                    return 
+                end
 
                 -- B. LOGIKA SENJATA (1-4)
                 if isWeaponKey then
@@ -874,7 +896,9 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         -- [4] EVENT SAAT TOMBOL DILEPAS (Touch Up)
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                
+                if id == "Dodge" then
+                    IsAutoDashing = false
+                end
                 -- Cek apakah ini tombol skill di mode INSTANT
                 if isSkillKey and SkillMode == "INSTANT" then
                     -- LEPAS M1 (Simulasi Jari Hantu Diangkat)
@@ -1266,6 +1290,8 @@ local function GetCurrentState()
         Pos_JoyOuter = getLayout(JoyOuter),
         Combos = {},
         VirtualKeys = {}
+        M1_OffsetX = M1_Offset.X,
+        M1_OffsetY = M1_Offset.Y
     }
 
     for _, combo in ipairs(Combos) do
@@ -1314,6 +1340,10 @@ local function LoadSpecific(configName)
         obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
     end
 
+    if data.M1_OffsetX and data.M1_OffsetY then
+        M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
+    end
+    
     GlobalTransparency = data.Transparency or 0
     TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
     UpdateTransparencyFunc()
@@ -1378,6 +1408,63 @@ local function LoadSpecific(configName)
     if ResizerUpdateFunc then ResizerUpdateFunc() end
     ShowNotification("Loaded: " .. configName, Theme.Blue)
 end
+
+-- [TAMBAHAN BARU] Isi Tab Settings
+local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,10); SetList.HorizontalAlignment="Center"
+
+-- Fungsi Pembantu Slider
+local function mkSlider(parent, title, min, max, default, callback)
+    local frame = Instance.new("Frame"); frame.Size=UDim2.new(0.9,0,0,50); frame.BackgroundColor3=Theme.Element; frame.Parent=parent; createCorner(frame,6)
+    local lbl = Instance.new("TextLabel"); lbl.Size=UDim2.new(1,0,0,20); lbl.Text=title..": "..default; lbl.TextColor3=Theme.SubText; lbl.BackgroundTransparency=1; lbl.Parent=frame; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11
+    local bar = Instance.new("Frame"); bar.Size=UDim2.new(0.9,0,0,4); bar.Position=UDim2.new(0.05,0,0.7,0); bar.BackgroundColor3=Theme.Stroke; bar.Parent=frame; createCorner(bar,2)
+    local knob = Instance.new("TextButton"); knob.Size=UDim2.new(0,14,0,14); knob.BackgroundColor3=Theme.Accent; knob.Text=""; knob.Parent=bar; createCorner(knob,7); knob.Selectable=false
+    
+    -- Hitung posisi awal knob
+    local startP = (default - min) / (max - min)
+    knob.Position = UDim2.new(math.clamp(startP, 0, 1), -7, 0.5, -7)
+
+    local drag=false
+    knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true end end)
+    UserInputService.InputChanged:Connect(function(i)
+        if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
+            local p = math.clamp((i.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
+            knob.Position = UDim2.new(p, -7, 0.5, -7)
+            local val = math.floor(min + (p * (max - min)))
+            lbl.Text = title..": "..val
+            callback(val)
+        end
+    end)
+    UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end end)
+end
+
+-- Visual Crosshair (Titik Merah di Layar)
+CrosshairUI = Instance.new("Frame")
+CrosshairUI.Size = UDim2.new(0, 10, 0, 10)
+CrosshairUI.BackgroundColor3 = Theme.Red
+CrosshairUI.Parent = ScreenGui
+CrosshairUI.Visible = false
+CrosshairUI.ZIndex = 9999
+createCorner(CrosshairUI, 5)
+
+local function UpdateCrosshair()
+    local vp = Camera.ViewportSize
+    local x = (vp.X / 2) + M1_Offset.X
+    local y = (vp.Y / 2) + M1_Offset.Y
+    CrosshairUI.Position = UDim2.new(0, x - 5, 0, y - 5)
+end
+
+-- Masukkan Slider ke Tab Settings
+local ToggleCH = mkTool("SHOW CROSSHAIR: OFF", Theme.Red, nil, P_Set); ToggleCH.Size=UDim2.new(0.9,0,0,40)
+ToggleCH.MouseButton1Click:Connect(function() 
+    ShowCrosshair = not ShowCrosshair
+    CrosshairUI.Visible = ShowCrosshair
+    UpdateCrosshair()
+    ToggleCH.Text = ShowCrosshair and "SHOW CROSSHAIR: ON" or "SHOW CROSSHAIR: OFF"
+    ToggleCH.BackgroundColor3 = ShowCrosshair and Theme.Green or Theme.Red
+end)
+
+mkSlider(P_Set, "M1 OFFSET X (Horizontal)", -300, 300, 0, function(v) M1_Offset = Vector2.new(v, M1_Offset.Y); UpdateCrosshair() end)
+mkSlider(P_Set, "M1 OFFSET Y (Vertical)", -300, 300, 0, function(v) M1_Offset = Vector2.new(M1_Offset.X, v); UpdateCrosshair() end)
 
 -- === SYSTEM TAB ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
