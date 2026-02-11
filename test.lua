@@ -1,9 +1,8 @@
 -- ==============================================================================
--- [ VELOX V1.9 - UI JUMP & TOGGLE EQUIP FIX ]
--- Fix: Jump now clicks the actual Mobile Jump Button (TouchControlFrame)
--- Fix: Weapon 1-4 Toggles (Equip/Unequip) work flawlessly
--- Removed: M1 Button
--- Added: Dodge Context Button
+-- [ VELOX V2.0 - JUMP BUTTON & TOUCH FIX ]
+-- Fix: Jump Button now uses correct Path & Touch Input Type
+-- Fix: Weapon 1-4 Toggles (Equip/Unequip)
+-- Added: Dodge, Ken, Race, Soru Context Buttons
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -39,7 +38,36 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [1] CORE LOGIC: EQUIP/UNEQUIP (TOGGLE)
+-- [1] UTILITY: FIRE UI (UPDATED FOR TOUCH)
+-- ==============================================================================
+
+local function FireUI(btn)
+    if not btn then return end
+    
+    -- 1. Coba Activated (Standard)
+    for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
+    
+    -- 2. Coba MouseClick (Standard)
+    for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
+    
+    -- 3. Coba InputBegan dengan Tipe TOUCH (PENTING UNTUK JUMP BUTTON)
+    for _, c in pairs(getconnections(btn.InputBegan)) do 
+        -- Kirim sinyal Touch
+        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.Begin})
+        
+        -- Kirim sinyal Mouse (Backup)
+        c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin})
+        
+        task.wait()
+        
+        -- End Input
+        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.End})
+        c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.End})
+    end
+end
+
+-- ==============================================================================
+-- [2] CORE LOGIC: EQUIP (TOGGLE)
 -- ==============================================================================
 
 local function EquipWeapon(slotIdx)
@@ -51,15 +79,12 @@ local function EquipWeapon(slotIdx)
     local targetInfo = WeaponData[slotIdx]
     if not targetInfo then return end
 
-    -- Cek senjata yang sedang dipegang
     local currentTool = char:FindFirstChildOfClass("Tool")
     
-    -- LOGIKA TOGGLE:
-    -- Jika senjata di tangan SAMA dengan tombol yang ditekan -> UNEQUIP
+    -- LOGIKA TOGGLE: Jika sudah pegang -> Unequip. Jika belum -> Equip.
     if currentTool and currentTool.ToolTip == targetInfo.tooltip then
         hum:UnequipTools()
     else
-        -- Jika BEDA atau KOSONG -> EQUIP senjata tersebut dari Backpack
         local foundTool = nil
         for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
             if t:IsA("Tool") and t.ToolTip == targetInfo.tooltip then
@@ -71,7 +96,7 @@ local function EquipWeapon(slotIdx)
         if foundTool then
             hum:EquipTool(foundTool)
         else
-            -- Fallback jika tooltip tidak terbaca, cari berdasarkan nama tipe
+            -- Fallback
             for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
                 if t:IsA("Tool") and (t.Name == targetInfo.type or t.Name:find(targetInfo.type)) then
                     hum:EquipTool(t)
@@ -83,26 +108,13 @@ local function EquipWeapon(slotIdx)
 end
 
 -- ==============================================================================
--- [2] CORE LOGIC: SKILLS & CONTEXT (SILENT UI)
+-- [3] CORE LOGIC: SKILLS & JUMP
 -- ==============================================================================
 
-local function FireUI(btn)
-    if not btn then return end
-    for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
-    for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
-    -- Fallback input for touch interfaces
-    for _, c in pairs(getconnections(btn.InputBegan)) do 
-        c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.Begin})
-        task.wait()
-        c:Fire({UserInputType=Enum.UserInputType.MouseButton1, UserInputState=Enum.UserInputState.End})
-    end
-end
-
--- TRIGGER SKILL UTAMA (Z, X, C, V, F)
+-- TRIGGER MAIN SKILL (Z-F)
 local function TriggerMainSkill(key)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not PGui then return end
-    local SkillsFrame = PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
+    local SkillsFrame = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
     if SkillsFrame then
         for _, toolFrame in pairs(SkillsFrame:GetChildren()) do
             if toolFrame:IsA("Frame") and toolFrame.Visible then
@@ -118,7 +130,6 @@ local function TriggerMainSkill(key)
 end
 
 -- TRIGGER CONTEXT (Dodge, Ken, Race, Soru)
--- Mencari tombol di MobileContextButtons -> ContextButtonFrame
 local function TriggerContext(keyword)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local CtxFrame = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
@@ -132,26 +143,27 @@ local function TriggerContext(keyword)
     end
 end
 
--- TRIGGER JUMP (Direct UI Click)
--- Mengklik tombol Jump bawaan Mobile Blox Fruit
+-- TRIGGER JUMP (FIXED PATH)
 local function TriggerJump()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     if not PGui then return end
-    
+
+    -- Path: game.Players.LocalPlayer.PlayerGui.TouchGui.TouchControlFrame.JumpButton
     local TouchGui = PGui:FindFirstChild("TouchGui")
     if TouchGui then
         local TouchControl = TouchGui:FindFirstChild("TouchControlFrame")
         if TouchControl then
             local JumpBtn = TouchControl:FindFirstChild("JumpButton")
             if JumpBtn then
-                FireUI(JumpBtn)
+                FireUI(JumpBtn) -- Klik tombol UI asli
+                return
             end
         end
     end
 end
 
 -- ==============================================================================
--- [3] UI SYSTEM
+-- [4] UI SYSTEM
 -- ==============================================================================
 
 local function createCorner(p, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r); c.Parent = p end
@@ -210,10 +222,10 @@ local function AddBtn(id, text, callback, size, color)
 end
 
 -- ==============================================================================
--- [4] SETUP BUTTONS (LAYOUT)
+-- [5] SETUP BUTTONS (LAYOUT)
 -- ==============================================================================
 
--- [ROW 1] Weapons (Toggle Logic)
+-- [ROW 1] Weapons (Toggle)
 AddBtn("1", "1", function() EquipWeapon(1) end).Position = UDim2.new(0.65, 0, 0.45, 0)
 AddBtn("2", "2", function() EquipWeapon(2) end).Position = UDim2.new(0.75, 0, 0.45, 0)
 AddBtn("3", "3", function() EquipWeapon(3) end).Position = UDim2.new(0.85, 0, 0.45, 0)
@@ -237,4 +249,4 @@ AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim
 local bJump = AddBtn("Jump", "JUMP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
 bJump.Position = UDim2.new(0.90, 0, 0.70, 0)
 
-print("Velox v1.9 Loaded: Jump UI Fixed + Toggle Equip")
+print("Velox v2.0 Loaded: Jump Touch Fix")
