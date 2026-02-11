@@ -56,7 +56,7 @@ local ResizerUpdateFunc = nil
 local UpdateTransparencyFunc = nil 
 local RefreshEditorUI = nil 
 local CreateComboButtonFunc = nil 
-local ModeBtn = nil -- Tombol Skill Mode (Dipindah ke Layout Tab)
+local ModeBtn = nil 
 
 local WeaponData = {
     {name = "Melee", slot = 1, color = Color3.fromRGB(255, 140, 0), tooltip = "Melee", keys = {"Z", "X", "C"}},
@@ -64,6 +64,13 @@ local WeaponData = {
     {name = "Sword", slot = 3, color = Color3.fromRGB(0, 160, 255), tooltip = "Sword", keys = {"Z", "X"}},
     {name = "Gun",   slot = 4, color = Color3.fromRGB(255, 220, 0),   tooltip = "Gun", keys = {"Z", "X"}}
 }
+
+-- ANTI AFK
+local VirtualUser = game:GetService("VirtualUser")
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
 
 -- ==============================================================================
 -- [2] UTILITY FUNCTIONS
@@ -291,7 +298,7 @@ end
 
 
 -- ==============================================================================
--- [4] INPUT HANDLERS (MOBILE ONLY)
+-- [4] INPUT HANDLERS (AUTO FINISH & SMART TAP SYNC)
 -- ==============================================================================
 
 local function executeComboSequence(idx)
@@ -300,12 +307,16 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
+    -- Cegah double run
+    if isRunning then return end
     isRunning = true
+    
+    -- Ubah tampilan tombol jadi "STOP" (Merah) saat jalan
     local btn = data.Button
-    btn:SetAttribute("OrigText", btn.Text)
+    local origText = btn.Text
     btn.Text = "STOP"
     btn.BackgroundColor3 = Theme.Red
-    btn.UIStroke.Color = Theme.Red
+    if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Red end
     
     task.spawn(function()
         for i, step in ipairs(data.Steps) do
@@ -317,43 +328,66 @@ local function executeComboSequence(idx)
                 break 
             end
             
+            -- [1] Equip Senjata
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot) end
-            task.wait(0.03)
+            
+            -- [2] Trigger Skill UI
             pressKey(step.Key)
+            
+            -- [3] Jeda Serang (Agar skill keluar sebelum M1)
             task.wait(0.03)
+            
+            -- [4] Delay Tambahan (Jika diatur di editor)
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
+            
+            -- [5] Pukul (M1) - FIXED SYNTAX HERE
             TapM1()
+            task.wait(0.03)
+            TapM1()
+            task.wait(0.03)
+            TapM1()
+            
+            -- [6] Jeda Antar Langkah Combo
             task.wait(0.2)
         end
         
+        -- [CLEANUP] Paksa Lepas M1 Virtual (Touch End ID 5)
+        local vp = Camera.ViewportSize
+        VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2)
+        
         isRunning = false
+        
+        -- [RESET SISTEM]
+        SelectedComboID = nil 
+        
         if btn then 
-            btn.Text = data.Name
-            btn.BackgroundColor3 = Theme.Sidebar
-            btn.UIStroke.Color = Theme.Accent 
+            btn.Text = data.Name -- Kembalikan nama C1/C2
+            btn.BackgroundColor3 = Theme.Sidebar -- Kembali ke warna Sidebar
+            if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
         end
-        if SelectedComboID == idx then 
-            btn.BackgroundColor3 = Theme.Green
-            btn.UIStroke.Color = Theme.Green 
-        end
+        
+        ShowNotification("Combo Finished", Theme.Accent)
     end)
 end
 
 local SmartTouchObject = nil 
 
+-- [GLOBAL INPUT LISTENER] - FIXED DUPLICATE HANDLERS
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if isChatting() then return end 
+    if isChatting() or gameProcessed then return end 
 
-    -- [SMART CAST TOUCH LOGIC]
-    if not gameProcessed and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+    if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+        
+        -- A. LOGIKA SMART SKILL (SINGLE BUTTON)
         if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-            SmartTouchObject = input 
+            SmartTouchObject = input
             task.spawn(function()
                 if CurrentSmartKeyData.Slot then equipWeapon(CurrentSmartKeyData.Slot) end
-                pressKey(CurrentSmartKeyData.KeyName) 
+                pressKey(CurrentSmartKeyData.KeyName)
             end)
         end
         
+        -- B. LOGIKA COMBO (INSTANT & SMART)
         if SelectedComboID ~= nil and not isRunning then
             executeComboSequence(SelectedComboID)
         end
@@ -361,14 +395,13 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 end)
 
 UserInputService.InputEnded:Connect(function(input)
+    -- Reset tombol Smart Skill (Single) saat jari dilepas
     if input == SmartTouchObject and SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-        
         if ActiveVirtualKeys[CurrentSmartKeyData.ID] then
             local btn = ActiveVirtualKeys[CurrentSmartKeyData.ID].Button
             btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
             btn.TextColor3 = Theme.Accent
         end
-        
         CurrentSmartKeyData = nil
         SmartTouchObject = nil
     end
@@ -745,8 +778,18 @@ end)
 -- ==============================================================================
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
+    local kn = tostring(keyName) -- Konversi ke teks agar aman
     
-    -- [1] BERSIHKAN TOMBOL LAMA (Refresh)
+    -- [AUTO-FIX] Jika Slot Index Kosong, Tentukan Berdasarkan Angka Tombol
+    if not slotIdx then
+        if kn == "1" then slotIdx = 1
+        elseif kn == "2" then slotIdx = 2
+        elseif kn == "3" then slotIdx = 3
+        elseif kn == "4" then slotIdx = 4
+        end
+    end
+    
+    -- [1] BERSIHKAN TOMBOL LAMA (Refresh jika ada duplikat)
     if ActiveVirtualKeys[id] then 
         ActiveVirtualKeys[id].Button:Destroy(); ActiveVirtualKeys[id]=nil
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Element; VirtualKeySelectors[id].TextColor3=Theme.Text end
@@ -765,16 +808,15 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.TextScaled = true 
         btn.Parent = ScreenGui
         btn.Selectable = false
+        btn.ZIndex = 60
         createCorner(btn, 12)
         createStroke(btn, Theme.Accent)
-        btn.ZIndex = 60
         MakeDraggable(btn, nil)
         
         -- Data tombol
-        local vData = {ID=id, Slot=slotIdx, Button=btn, KeyName=keyName}
+        local vData = {ID=id, Slot=slotIdx, Button=btn, KeyName=kn}
         
-        -- Identifikasi Tipe Tombol (Pastikan string, bukan number)
-        local kn = tostring(keyName) 
+        -- Identifikasi Tipe Tombol
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
@@ -782,57 +824,63 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- A. LOGIKA KHUSUS M1 & DODGE
+                -- A. LOGIKA KHUSUS M1 & DODGE (Prioritas Tertinggi)
                 if id == "M1" then TapM1() return end
                 if id == "Dodge" then TriggerDodge() return end
 
                 -- B. LOGIKA SENJATA (1-4)
                 if isWeaponKey then
                     equipWeapon(slotIdx) -- Panggil fungsi equip
-                    -- Visual Feedback Singkat
+                    
+                    -- Visual Feedback (Kedip)
                     btn.BackgroundColor3 = Theme.Accent
                     btn.TextColor3 = Color3.new(0,0,0)
                     task.delay(0.1, function()
                         btn.BackgroundColor3 = Color3.new(0,0,0)
                         btn.TextColor3 = Theme.Accent
                     end)
-                    return -- Stop, jangan lanjut ke skill
+                    return -- Stop, jangan lanjut ke logika skill
                 end
                 
                 -- C. LOGIKA SKILL (Z, X, C, V, F)
                 if isSkillKey then
                     if SkillMode == "INSTANT" then
+                        -- Mode Instant: Equip -> Skill -> Hold M1
+                        
                         -- 1. Equip Senjata (Internal)
                         if slotIdx then equipWeapon(slotIdx) end
                         
                         -- 2. Tekan Skill UI
-                        pressKey(keyName)
+                        pressKey(kn)
                         
-                        -- 3. Jeda Serang
+                        -- 3. Jeda Serang (Agar skill keluar dulu sebelum M1)
                         task.wait(0.03)
                         
                         -- 4. HOLD M1 (Simulasi Jari Hantu Menahan Layar)
                         local vp = Camera.ViewportSize
-                        VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- 0 = TouchBegin
+                        VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- 0 = TouchBegin (Tahan)
                         
-                        -- Visual Efek
+                        -- Visual Efek (Warna berubah saat ditahan)
                         btn.BackgroundColor3 = Theme.Accent
                         btn.TextColor3 = Color3.new(0,0,0)
                         
                     elseif SkillMode == "SMART" then
-                        pressKey(keyName)
-                        -- Logic Smart Tap (Visual Only)
+                        -- Mode Smart: HANYA PILIH TOMBOL (Jangan eksekusi di sini)
+                        
+                        -- Reset tombol lama jika ganti pilihan
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
                             local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                             if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
                         end
+                        
+                        -- Toggle On/Off
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
                             CurrentSmartKeyData = nil
                             btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
                             btn.TextColor3 = Theme.Accent
                         else
-                            CurrentSmartKeyData = vData
-                            btn.BackgroundColor3 = Theme.Green
+                            CurrentSmartKeyData = vData -- Simpan data untuk Global Handler
+                            btn.BackgroundColor3 = Theme.Green -- Tanda Ready
                             btn.TextColor3 = Theme.Bg
                         end
                     end
@@ -848,7 +896,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 if isSkillKey and SkillMode == "INSTANT" then
                     -- LEPAS M1 (Simulasi Jari Hantu Diangkat)
                     local vp = Camera.ViewportSize
-                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- 2 = TouchEnd
+                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- 2 = TouchEnd (Lepas)
                 end
                 
                 -- Reset Warna Tombol (Visual)
@@ -917,14 +965,57 @@ CreateComboButtonFunc = function(idx, loadedSteps)
 end
 
 -- ==============================================================================
--- [9] LAYOUT SETTINGS TAB
+-- [9] LAYOUT SETTINGS TAB (AUTO-RESIZE FIX)
 -- ==============================================================================
-local LayPad = Instance.new("UIPadding"); LayPad.Parent=P_Lay; LayPad.PaddingLeft=UDim.new(0,10); LayPad.PaddingRight=UDim.new(0,10); LayPad.PaddingTop=UDim.new(0,10); LayPad.PaddingBottom=UDim.new(0,10)
-local LayList = Instance.new("UIListLayout"); LayList.Parent=P_Lay; LayList.Padding=UDim.new(0,10); LayList.SortOrder="LayoutOrder"
-LayList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() P_Lay.CanvasSize = UDim2.new(0, 0, 0, LayList.AbsoluteContentSize.Y + 20) end)
 
-local SetBox = Instance.new("Frame"); SetBox.Size=UDim2.new(0.95,0,0,80); SetBox.BackgroundTransparency=1; SetBox.LayoutOrder=1; SetBox.Parent=P_Lay
-local Grid1 = Instance.new("UIGridLayout"); Grid1.Parent=SetBox; Grid1.CellSize=UDim2.new(0.47,0,0,30); Grid1.CellPadding=UDim2.new(0.04,0,0.1,0)
+-- 1. Main Container & List Layout
+local LayPad = Instance.new("UIPadding"); LayPad.Parent=P_Lay
+LayPad.PaddingLeft=UDim.new(0,10); LayPad.PaddingRight=UDim.new(0,10)
+LayPad.PaddingTop=UDim.new(0,15); LayPad.PaddingBottom=UDim.new(0,50) -- Padding bawah besar agar scroll enak
+
+local LayList = Instance.new("UIListLayout"); LayList.Parent=P_Lay
+LayList.Padding=UDim.new(0, 15) -- Jarak antar Seksi Menu (Supaya tidak nempel)
+LayList.SortOrder="LayoutOrder"
+LayList.HorizontalAlignment="Center"
+
+-- Auto-Resize Canvas (Agar bisa discroll sampai bawah)
+LayList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() 
+    P_Lay.CanvasSize = UDim2.new(0, 0, 0, LayList.AbsoluteContentSize.Y + 60) 
+end)
+
+-- Helper function untuk membuat Section Header
+local function mkSection(title, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 20)
+    l.Text = title
+    l.TextColor3 = Theme.SubText
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 11
+    l.TextXAlignment = "Left"
+    l.BackgroundTransparency = 1
+    l.LayoutOrder = order
+    l.Parent = P_Lay
+    return l
+end
+
+-- === A. GENERAL SETTINGS ===
+mkSection("GENERAL SETTINGS", 1)
+
+local SetBox = Instance.new("Frame")
+SetBox.Size = UDim2.new(1, 0, 0, 0) -- Tinggi 0, biar AutoSize yang atur
+SetBox.AutomaticSize = Enum.AutomaticSize.Y -- <--- KUNCI ANTI TUMPUK
+SetBox.BackgroundTransparency = 1
+SetBox.LayoutOrder = 2
+SetBox.Parent = P_Lay
+
+local Grid1 = Instance.new("UIGridLayout"); Grid1.Parent=SetBox
+Grid1.CellSize = UDim2.new(0.48, 0, 0, 35)
+Grid1.CellPadding = UDim2.new(0.04, 0, 0.04, 0)
+
+-- Tools
+local function mkTool(t,c,f,p) 
+    local b=Instance.new("TextButton"); b.Text=t; b.BackgroundColor3=Theme.Sidebar; b.TextColor3=Theme.Text; b.Font=Enum.Font.Gotham; b.TextSize=10; b.Parent=p; b.Selectable=false; createCorner(b,6); createStroke(b,c); if f then b.MouseButton1Click:Connect(f) end; return b 
+end
 
 LockBtn = mkTool("POS: UNLOCKED", Theme.Green, function() IsLayoutLocked=not IsLayoutLocked; updateLockState() end, SetBox)
 local JoyToggle = mkTool("JOYSTICK: OFF", Theme.Red, nil, SetBox)
@@ -937,7 +1028,7 @@ end, SetBox)
 
 mkTool("DEL COMBO", Theme.Red, function() if #Combos<1 then return end; Combos[CurrentComboIndex].Button:Destroy(); table.remove(Combos, CurrentComboIndex); if #Combos > 0 then CurrentComboIndex=math.min(CurrentComboIndex, #Combos) else CurrentComboIndex=0 end; if ResizerUpdateFunc then ResizerUpdateFunc() end; RefreshEditorUI(); ShowNotification("Combo Deleted", Theme.Red); end, SetBox)
 
--- MODE BTN (MOVED FROM CONTROLS TAB)
+-- Mode Button
 ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
     if SkillMode == "INSTANT" then 
         SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
@@ -946,43 +1037,67 @@ ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function()
     end 
 end, SetBox)
 
--- TRANSPARENCY
-local TransBox = Instance.new("Frame"); TransBox.Size=UDim2.new(0.95,0,0,30); TransBox.BackgroundTransparency=1; TransBox.LayoutOrder=2; TransBox.Parent=P_Lay
-local TLbl = Instance.new("TextLabel"); TLbl.Size=UDim2.new(0.4,0,1,0); TLbl.Text="Transparency:"; TLbl.TextColor3=Theme.SubText; TLbl.Font=Enum.Font.Gotham; TLbl.TextSize=11; TLbl.TextXAlignment="Left"; TLbl.BackgroundTransparency=1; TLbl.Parent=TransBox
-local TBg = Instance.new("Frame"); TBg.Size=UDim2.new(0.55,0,0,4); TBg.Position=UDim2.new(0.42,0,0.5,-2); TBg.BackgroundColor3=Theme.Stroke; TBg.Parent=TransBox; createCorner(TBg,2)
+-- === B. TRANSPARENCY ===
+local TransContainer = Instance.new("Frame")
+TransContainer.Size = UDim2.new(1, 0, 0, 30)
+TransContainer.BackgroundTransparency = 1
+TransContainer.LayoutOrder = 3
+TransContainer.Parent = P_Lay
+
+local TLbl = Instance.new("TextLabel"); TLbl.Size=UDim2.new(0.4,0,1,0); TLbl.Text="TRANSPARENCY"; TLbl.TextColor3=Theme.SubText; TLbl.Font=Enum.Font.GothamBold; TLbl.TextSize=10; TLbl.TextXAlignment="Left"; TLbl.BackgroundTransparency=1; TLbl.Parent=TransContainer
+local TBg = Instance.new("Frame"); TBg.Size=UDim2.new(0.55,0,0,4); TBg.Position=UDim2.new(0.42,0,0.5,-2); TBg.BackgroundColor3=Theme.Stroke; TBg.Parent=TransContainer; createCorner(TBg,2)
 local TKnob = Instance.new("TextButton"); TKnob.Size=UDim2.new(0,12,0,12); TKnob.Position=UDim2.new(0,0,0.5,-6); TKnob.BackgroundColor3=Theme.Accent; TKnob.Text=""; TKnob.Parent=TBg; TKnob.Selectable=false; createCorner(TKnob,6)
 local dragT=false; TKnob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragT=true end end); UserInputService.InputChanged:Connect(function(i) if dragT and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local p=math.clamp((i.Position.X-TBg.AbsolutePosition.X)/TBg.AbsoluteSize.X,0,1); TKnob.Position=UDim2.new(p,-6,0.5,-6); GlobalTransparency=p*0.9; UpdateTransparencyFunc() end end); UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragT=false end end)
 
--- MANUAL V-KEYS 1-4 & Z-F
-local VKTitle = Instance.new("TextLabel"); VKTitle.Size=UDim2.new(0.95,0,0,25); VKTitle.Text="QUICK VIRTUAL KEYS"; VKTitle.TextColor3=Theme.Accent; VKTitle.Font=Enum.Font.GothamBold; VKTitle.TextSize=12; VKTitle.BackgroundTransparency=1; VKTitle.LayoutOrder=3; VKTitle.Parent=P_Lay
-local VKBox = Instance.new("Frame"); VKBox.Size=UDim2.new(0.95,0,0,120); VKBox.BackgroundTransparency=1; VKBox.LayoutOrder=4; VKBox.Parent=P_Lay
-local Grid2 = Instance.new("UIGridLayout"); Grid2.Parent=VKBox; Grid2.CellSize=UDim2.new(0.3,0,0,32); Grid2.CellPadding=UDim2.new(0.03,0,0.03,0)
+
+-- === C. QUICK KEYS (Fixed Spacing) ===
+mkSection("QUICK KEYS (Tap to Toggle)", 4)
+
+local VKBox = Instance.new("Frame")
+VKBox.Size = UDim2.new(1, 0, 0, 0)
+VKBox.AutomaticSize = Enum.AutomaticSize.Y -- <--- KUNCI ANTI TUMPUK
+VKBox.BackgroundTransparency = 1
+VKBox.LayoutOrder = 5
+VKBox.Parent = P_Lay
+
+local Grid2 = Instance.new("UIGridLayout"); Grid2.Parent=VKBox
+Grid2.CellSize = UDim2.new(0.18, 0, 0, 35) -- Ukuran tombol lebih kecil agar muat banyak
+Grid2.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
+
 local keysList = {"1", "2", "3", "4", "Z", "X", "C", "V", "F", "M1", "Dodge"}
 for _, k in ipairs(keysList) do
-    local btn = Instance.new("TextButton"); btn.Text=k; btn.BackgroundColor3=Theme.Element; btn.TextColor3=Theme.Text; btn.Font=Enum.Font.GothamBold; btn.TextSize=11; btn.Parent=VKBox; btn.Selectable=false; createCorner(btn,4)
+    local btn = Instance.new("TextButton"); btn.Text=k; btn.BackgroundColor3=Theme.Element; btn.TextColor3=Theme.Text; btn.Font=Enum.Font.GothamBold; btn.TextSize=12; btn.Parent=VKBox; btn.Selectable=false; createCorner(btn,4)
     btn.MouseButton1Click:Connect(function() toggleVirtualKey(k, nil, k) end) 
     VirtualKeySelectors[k] = btn
 end
 
--- WEAPON V-KEY ADDER
-local AddTitle = Instance.new("TextLabel"); AddTitle.Size=UDim2.new(0.95,0,0,20); AddTitle.Text="WEAPON SKILL"; AddTitle.TextColor3=Theme.Accent; AddTitle.Font=Enum.Font.GothamBold; AddTitle.TextSize=11; AddTitle.BackgroundTransparency=1; AddTitle.LayoutOrder=5; AddTitle.Parent=P_Lay
-local VKeyAddBox = Instance.new("Frame"); VKeyAddBox.Size=UDim2.new(0.95,0,0,80); VKeyAddBox.BackgroundColor3=Theme.Sidebar; VKeyAddBox.LayoutOrder=6; VKeyAddBox.Parent=P_Lay; createCorner(VKeyAddBox,6)
 
--- BUTTONS FOR ADDER
-local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.45,0,0,30); TypeBtn.Position=UDim2.new(0.03,0,0.1,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6)
-local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.45,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0.1,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6)
-local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(0.94,0,0,30); AddVKeyBtn.Position=UDim2.new(0.03,0,0.55,0); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6) 
+-- === D. WEAPON SKILL ADDER ===
+mkSection("CUSTOM WEAPON BIND", 6)
+
+local VKeyAddBox = Instance.new("Frame")
+VKeyAddBox.Size = UDim2.new(1, 0, 0, 90) -- Tinggi tetap karena isinya fix
+VKeyAddBox.BackgroundColor3 = Theme.Sidebar
+VKeyAddBox.LayoutOrder = 7
+VKeyAddBox.Parent = P_Lay
+createCorner(VKeyAddBox, 6)
+local VKeyPad = Instance.new("UIPadding"); VKeyPad.Parent=VKeyAddBox; VKeyPad.PaddingTop=UDim.new(0,10); VKeyPad.PaddingLeft=UDim.new(0,10); VKeyPad.PaddingRight=UDim.new(0,10)
+
+-- Selector Buttons
+local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.48,0,0,30); TypeBtn.Position=UDim2.new(0,0,0,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6); TypeBtn.Font=Enum.Font.GothamBold; TypeBtn.TextSize=11
+local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.48,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6); KeyBtn.Font=Enum.Font.GothamBold; KeyBtn.TextSize=11
+local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(1,0,0,35); AddVKeyBtn.Position=UDim2.new(0,0,0,40); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6); AddVKeyBtn.TextSize=12
 
 local selW, selK = "Melee", "Z"
-local SkillLimits = { ["Melee"] = {"Z", "X", "C"}, ["Fruit"] = {"Z", "X", "C", "V", "F"}, ["Sword"] = {"Z", "X"}, ["Gun"]   = {"Z", "X"} }
+local SkillLimits = { ["Melee"] = {"Z", "X", "C"}, ["Fruit"] = {"Z", "X", "C", "V", "F"}, ["Sword"] = {"Z", "X"}, ["Gun"] = {"Z", "X"} }
 
 local function UpdateAddButtonState()
     local id = selW .. " " .. selK
     if ActiveVirtualKeys[id] then
-        AddVKeyBtn.Text = "DELETE KEY"
+        AddVKeyBtn.Text = "DELETE (" .. id .. ")"
         AddVKeyBtn.BackgroundColor3 = Theme.Red
     else
-        AddVKeyBtn.Text = "ADD BOUND KEY"
+        AddVKeyBtn.Text = "ADD KEY (" .. id .. ")"
         AddVKeyBtn.BackgroundColor3 = Theme.Green
     end
 end
@@ -1015,14 +1130,23 @@ AddVKeyBtn.MouseButton1Click:Connect(function()
 end)
 UpdateAddButtonState()
 
--- RESIZER & VISIBILITY BUTTON
-local AdvLabel = Instance.new("TextLabel"); AdvLabel.Size=UDim2.new(0.95,0,0,20); AdvLabel.Text="RESIZE BUTTON"; AdvLabel.TextColor3=Theme.Accent; AdvLabel.Font=Enum.Font.GothamBold; AdvLabel.TextSize=11; AdvLabel.BackgroundTransparency=1; AdvLabel.LayoutOrder=7; AdvLabel.Parent=P_Lay
-local AdvBox = Instance.new("Frame"); AdvBox.Size=UDim2.new(0.95,0,0,120); AdvBox.BackgroundColor3=Theme.Sidebar; AdvBox.LayoutOrder=8; AdvBox.Parent=P_Lay; createCorner(AdvBox,6)
-local SelectBtn = Instance.new("TextButton"); SelectBtn.Size=UDim2.new(0.9,0,0,30); SelectBtn.Position=UDim2.new(0.05,0,0.1,0); SelectBtn.BackgroundColor3=Theme.Element; SelectBtn.Text="SELECT: NONE"; SelectBtn.TextColor3=Theme.Text; SelectBtn.Font=Enum.Font.GothamBold; SelectBtn.TextSize=11; SelectBtn.Parent=AdvBox; createCorner(SelectBtn,6)
-local SizeSlider = Instance.new("Frame"); SizeSlider.Size=UDim2.new(0.9,0,0,4); SizeSlider.Position=UDim2.new(0.05,0,0.5,0); SizeSlider.BackgroundColor3=Theme.Stroke; SizeSlider.Parent=AdvBox; createCorner(SizeSlider,2)
+
+-- === E. RESIZER & VISIBILITY ===
+mkSection("RESIZER & VISIBILITY", 8)
+
+local AdvBox = Instance.new("Frame")
+AdvBox.Size = UDim2.new(1, 0, 0, 110)
+AdvBox.BackgroundColor3 = Theme.Sidebar
+AdvBox.LayoutOrder = 9
+AdvBox.Parent = P_Lay
+createCorner(AdvBox,6)
+local AdvPad = Instance.new("UIPadding"); AdvPad.Parent=AdvBox; AdvPad.PaddingTop=UDim.new(0,10); AdvPad.PaddingLeft=UDim.new(0,10); AdvPad.PaddingRight=UDim.new(0,10)
+
+local SelectBtn = Instance.new("TextButton"); SelectBtn.Size=UDim2.new(1,0,0,30); SelectBtn.Position=UDim2.new(0,0,0,0); SelectBtn.BackgroundColor3=Theme.Element; SelectBtn.Text="SELECT: NONE"; SelectBtn.TextColor3=Theme.Text; SelectBtn.Font=Enum.Font.GothamBold; SelectBtn.TextSize=11; SelectBtn.Parent=AdvBox; createCorner(SelectBtn,6)
+local SizeSlider = Instance.new("Frame"); SizeSlider.Size=UDim2.new(1,0,0,4); SizeSlider.Position=UDim2.new(0,0,0,50); SizeSlider.BackgroundColor3=Theme.Stroke; SizeSlider.Parent=AdvBox; createCorner(SizeSlider,2)
 local SizeKnob = Instance.new("TextButton"); SizeKnob.Size=UDim2.new(0,12,0,12); SizeKnob.Position=UDim2.new(0,-6,0.5,-6); SizeKnob.BackgroundColor3=Theme.Accent; SizeKnob.Text=""; SizeKnob.Parent=SizeSlider; SizeKnob.Selectable=false; createCorner(SizeKnob,6)
 local SizeLabel = Instance.new("TextLabel"); SizeLabel.Size=UDim2.new(1,0,0,15); SizeLabel.Position=UDim2.new(0,0,-4,0); SizeLabel.Text="SIZE: 0%"; SizeLabel.TextColor3=Theme.SubText; SizeLabel.Font=Enum.Font.Gotham; SizeLabel.TextSize=10; SizeLabel.BackgroundTransparency=1; SizeLabel.Parent=SizeSlider
-local VisBtn = Instance.new("TextButton"); VisBtn.Size=UDim2.new(0.9,0,0,30); VisBtn.Position=UDim2.new(0.05,0,0.7,0); VisBtn.BackgroundColor3=Theme.Green; VisBtn.Text="VISIBLE: ON"; VisBtn.TextColor3=Theme.Bg; VisBtn.Font=Enum.Font.GothamBold; VisBtn.TextSize=11; VisBtn.Parent=AdvBox; createCorner(VisBtn,6); VisBtn.Visible=false 
+local VisBtn = Instance.new("TextButton"); VisBtn.Size=UDim2.new(1,0,0,30); VisBtn.Position=UDim2.new(0,0,0,60); VisBtn.BackgroundColor3=Theme.Green; VisBtn.Text="VISIBLE: ON"; VisBtn.TextColor3=Theme.Bg; VisBtn.Font=Enum.Font.GothamBold; VisBtn.TextSize=11; VisBtn.Parent=AdvBox; createCorner(VisBtn,6); VisBtn.Visible=false 
 
 local ResizerIndex = 1
 ResizerUpdateFunc = function() 
@@ -1050,11 +1174,9 @@ ResizerUpdateFunc = function()
     else
         VisBtn.Visible = true
         if item.Obj.Visible then 
-            VisBtn.Text="VISIBLE: ON"
-            VisBtn.BackgroundColor3=Theme.Green 
+            VisBtn.Text="VISIBLE: ON"; VisBtn.BackgroundColor3=Theme.Green 
         else 
-            VisBtn.Text="VISIBLE: OFF"
-            VisBtn.BackgroundColor3=Theme.Red 
+            VisBtn.Text="VISIBLE: OFF"; VisBtn.BackgroundColor3=Theme.Red 
         end
     end
 end
