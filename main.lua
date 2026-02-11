@@ -249,30 +249,62 @@ local function ShowNotification(text, color)
 end
 
 -- COMBAT LOGIC
-local function pressKey(keyName)
+
+-- ==============================================================================
+-- [3] COMBAT LOGIC (FIXED & DEFINED)
+-- ==============================================================================
+
+-- 1. FUNGSI UTAMA: Mengatur Status Tekanan Skill (PENTING untuk Hold/Release)
+local function setSkillState(keyName, isDown)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local Skills = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
+    
     if Skills then
         for _, f in pairs(Skills:GetChildren()) do
+            -- Mencari tombol skill (Z, X, C, V, F) yang sesuai dan sedang terlihat
             if f:IsA("Frame") and f.Visible and f:FindFirstChild(keyName) then
-                FireUI(f[keyName]:FindFirstChild("Mobile") or f[keyName])
+                local btn = f[keyName]:FindFirstChild("Mobile") or f[keyName]
+                
+                if btn and getconnections then
+                    if isDown then
+                        -- SIMULASI JARI MENEMPEL (Mulai Charge/Hold)
+                        for _, c in pairs(getconnections(btn.InputBegan)) do
+                            c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.Begin})
+                        end
+                    else
+                        -- SIMULASI JARI DIANGKAT (Tembak Skill)
+                        for _, c in pairs(getconnections(btn.InputEnded)) do
+                            c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.End})
+                        end
+                        -- Activated sebagai backup agar skill pasti keluar
+                        for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
+                    end
+                end
                 return
             end
         end
     end
 end
 
+-- 2. FUNGSI pressKey: Diperbarui agar menggunakan logic setSkillState (Tap Cepat)
+local function pressKey(keyName)
+    setSkillState(keyName, true)  -- Tekan
+    task.wait(0.05)               -- Jeda sangat singkat (registering)
+    setSkillState(keyName, false) -- Lepas
+end
+
+-- 3. FUNGSI isWeaponReady: Tetap (Sudah Benar)
 local function isWeaponReady(targetSlotIdx)
     local char = LocalPlayer.Character
     if not char then return false end
     local tool = char:FindFirstChildOfClass("Tool")
     if not tool then return false end 
     local expectedTip = WeaponData[targetSlotIdx].tooltip
-    if tool.ToolTip == expectedTip then return true end
-    return false
+    return tool.ToolTip == expectedTip
 end
 
-local function equipWeapon(slotIdx)
+-- 4. FUNGSI equipWeapon: Mendukung Klik 1x Pasang, Klik 2x Lepas (Toggle)
+local function equipWeapon(slotIdx, isToggle)
     if not slotIdx or not WeaponData[slotIdx] then return end
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChild("Humanoid")
@@ -280,10 +312,16 @@ local function equipWeapon(slotIdx)
     local targetTooltip = WeaponData[slotIdx].tooltip
     
     local currentTool = char:FindFirstChildOfClass("Tool")
+    
+    -- Logika Toggle: Jika sedang pegang senjata yang sama
     if currentTool and currentTool.ToolTip == targetTooltip then
-        return 
+        if isToggle then
+            hum:UnequipTools() -- Lepas senjata (Klik kedua kali)
+        end
+        return -- Selesai
     end
     
+    -- Logika Equip: Jika belum pegang, cari di Backpack
     local toolToEquip = nil
     for _, tool in pairs(LocalPlayer.Backpack:GetChildren()) do
         if tool:IsA("Tool") and tool.ToolTip == targetTooltip then
@@ -292,8 +330,10 @@ local function equipWeapon(slotIdx)
         end
     end
     
-    if toolToEquip then hum:EquipTool(toolToEquip) end
-    task.wait(0.1)
+    if toolToEquip then 
+        hum:EquipTool(toolToEquip) 
+        task.wait(0.1) -- Jeda animasi equip agar tidak bug
+    end
 end
 
 
@@ -301,21 +341,19 @@ end
 -- [4] INPUT HANDLERS (AUTO FINISH & SMART TAP SYNC)
 -- ==============================================================================
 
+local IsSmartHolding = false -- Variable untuk melacak sentuhan jari user
+
 local function executeComboSequence(idx)
     if isChatting() then return end 
 
     local data = Combos[idx]
     if not data or not data.Button then return end
     
-    -- Cegah double run
     if isRunning then return end
     isRunning = true
     
-    -- Ubah tampilan tombol jadi "STOP" (Merah) saat jalan
     local btn = data.Button
-    local origText = btn.Text
-    btn.Text = "STOP"
-    btn.BackgroundColor3 = Theme.Red
+    btn.Text = "STOP"; btn.BackgroundColor3 = Theme.Red
     if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Red end
     
     task.spawn(function()
@@ -324,12 +362,11 @@ local function executeComboSequence(idx)
             
             local char = LocalPlayer.Character
             if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
-                isRunning = false
-                break 
+                isRunning = false; break 
             end
             
-            -- [1] Equip Senjata
-            if not isWeaponReady(step.Slot) then equipWeapon(step.Slot) end
+            -- [1] Equip Senjata (Force Equip, bukan toggle)
+            if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
             
             -- [2] Trigger Skill UI
             pressKey(step.Key)
@@ -339,34 +376,49 @@ local function executeComboSequence(idx)
             
             -- [4] Delay Tambahan (Jika diatur di editor)
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
+            if SkillMode == "SMART" and i == 1 then
+                -- Tunggu sampai user melepas jari (Manual Hold)
+                -- Skill sudah ditembakkan oleh pressKey, sekarang kita biarkan user menahan M1 (via sentuhan layar asli)
+                while IsSmartHolding and isRunning do
+                    task.wait()
+                end
+            else
+                -- [LOGIKA OTOMATIS STEP 2+ ATAU INSTANT MODE]
+                -- Mendukung setting "HOLD" dari UI Editor
+                
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    -- Simulasi Tahan M1
+                    local vp = Camera.ViewportSize
+                    VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- Touch Down
+                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
+                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- Touch Up
+                else
+                    -- Jika Mode Tap Biasa
+                    task.wait(0.03)
+                    TapM1()
+                    task.wait(0.03)
+                    TapM1()
+                    task.wait(0.03)
+                    TapM1()
             
-            -- [5] Pukul (M1) - FIXED SYNTAX HERE
-            TapM1()
-            task.wait(0.03)
-            TapM1()
-            task.wait(0.03)
-            TapM1()
+                end
+            end
+            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
             
-            -- [6] Jeda Antar Langkah Combo
+            -- [4] Jeda Antar Langkah
             task.wait(0.2)
         end
         
-        -- [CLEANUP] Paksa Lepas M1 Virtual (Touch End ID 5)
+        -- [CLEANUP] 
         local vp = Camera.ViewportSize
-        VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2)
-        
+        VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) 
         isRunning = false
-        
-        -- [RESET SISTEM]
         SelectedComboID = nil 
         
         if btn then 
-            btn.Text = data.Name -- Kembalikan nama C1/C2
-            btn.BackgroundColor3 = Theme.Sidebar -- Kembali ke warna Sidebar
+            btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
             if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
         end
-        
-        ShowNotification("Combo Finished", Theme.Accent)
     end)
 end
 
@@ -378,32 +430,36 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
         
-        -- A. LOGIKA SMART SKILL (SINGLE BUTTON)
+        -- A. LOGIKA SMART SKILL (SINGLE)
         if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
             SmartTouchObject = input
             task.spawn(function()
-                if CurrentSmartKeyData.Slot then equipWeapon(CurrentSmartKeyData.Slot) end
+                if CurrentSmartKeyData.Slot then equipWeapon(CurrentSmartKeyData.Slot, false) end
                 pressKey(CurrentSmartKeyData.KeyName)
             end)
         end
         
         -- B. LOGIKA COMBO (INSTANT & SMART)
         if SelectedComboID ~= nil and not isRunning then
+            IsSmartHolding = true -- Tandai jari sedang menempel
             executeComboSequence(SelectedComboID)
         end
     end
 end)
 
 UserInputService.InputEnded:Connect(function(input)
-    -- Reset tombol Smart Skill (Single) saat jari dilepas
+    -- Deteksi lepas jari untuk Smart Combo
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        IsSmartHolding = false -- Lepas flag hold agar combo lanjut ke step 2
+    end
+
+    -- Reset Smart Skill (Single)
     if input == SmartTouchObject and SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
         if ActiveVirtualKeys[CurrentSmartKeyData.ID] then
             local btn = ActiveVirtualKeys[CurrentSmartKeyData.ID].Button
-            btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
-            btn.TextColor3 = Theme.Accent
+            btn.BackgroundColor3 = Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent
         end
-        CurrentSmartKeyData = nil
-        SmartTouchObject = nil
+        CurrentSmartKeyData = nil; SmartTouchObject = nil
     end
 end)
 
@@ -830,7 +886,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
 
                 -- B. LOGIKA SENJATA (1-4)
                 if isWeaponKey then
-                    equipWeapon(slotIdx) -- Panggil fungsi equip
+                    equipWeapon(slotIdx, true)
                     
                     -- Visual Feedback (Kedip)
                     btn.BackgroundColor3 = Theme.Accent
@@ -845,10 +901,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 -- C. LOGIKA SKILL (Z, X, C, V, F)
                 if isSkillKey then
                     if SkillMode == "INSTANT" then
-                        -- Mode Instant: Equip -> Skill -> Hold M1
-                        
-                        -- 1. Equip Senjata (Internal)
-                        if slotIdx then equipWeapon(slotIdx) end
                         
                         -- 2. Tekan Skill UI
                         pressKey(kn)
@@ -868,21 +920,20 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         -- Mode Smart: HANYA PILIH TOMBOL (Jangan eksekusi di sini)
                         
                         -- Reset tombol lama jika ganti pilihan
-                        if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
-                            local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
-                            if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
-                        end
-                        
-                        -- Toggle On/Off
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
+                            setSkillState(kn, false) -- Pastikan input lepas
                             CurrentSmartKeyData = nil
-                            btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
-                            btn.TextColor3 = Theme.Accent
+                            btn.BackgroundColor3 = Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent
                         else
-                            CurrentSmartKeyData = vData -- Simpan data untuk Global Handler
-                            btn.BackgroundColor3 = Theme.Green -- Tanda Ready
-                            btn.TextColor3 = Theme.Bg
+                            -- JIKA BELUM AKTIF -> AKTIFKAN (Arming)
+                            if CurrentSmartKeyData then -- Reset tombol hijau sebelumnya
+                                local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
+                                if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
+                            end
+                            CurrentSmartKeyData = vData
+                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         end
+                        return
                     end
                 end
             end
@@ -1013,9 +1064,6 @@ Grid1.CellSize = UDim2.new(0.48, 0, 0, 35)
 Grid1.CellPadding = UDim2.new(0.04, 0, 0.04, 0)
 
 -- Tools
-local function mkTool(t,c,f,p) 
-    local b=Instance.new("TextButton"); b.Text=t; b.BackgroundColor3=Theme.Sidebar; b.TextColor3=Theme.Text; b.Font=Enum.Font.Gotham; b.TextSize=10; b.Parent=p; b.Selectable=false; createCorner(b,6); createStroke(b,c); if f then b.MouseButton1Click:Connect(f) end; return b 
-end
 
 LockBtn = mkTool("POS: UNLOCKED", Theme.Green, function() IsLayoutLocked=not IsLayoutLocked; updateLockState() end, SetBox)
 local JoyToggle = mkTool("JOYSTICK: OFF", Theme.Red, nil, SetBox)
