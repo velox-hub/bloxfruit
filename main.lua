@@ -770,7 +770,10 @@ end)
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
     
-    -- Bersihkan tombol lama jika ada (untuk refresh)
+    -- Konversi ke string agar "1" (angka) dan "1" (teks) dianggap sama
+    local sKey = tostring(keyName) 
+    
+    -- Bersihkan tombol lama jika ada
     if ActiveVirtualKeys[id] then 
         ActiveVirtualKeys[id].Button:Destroy(); ActiveVirtualKeys[id]=nil
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Element; VirtualKeySelectors[id].TextColor3=Theme.Text end
@@ -781,7 +784,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 50, 0, 50)
         btn.Position = UDim2.new(0.5, 0, 0.5, 0)
-        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- Warna Hitam
+        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
         btn.Text = id
         btn.TextColor3 = Theme.Accent
         btn.Font = Enum.Font.GothamBold
@@ -794,26 +797,30 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.ZIndex = 60
         MakeDraggable(btn, nil)
         
-        -- Tentukan KeyCode
+        -- Mapping KeyCode yang lebih aman
         local kCode
-        if keyName=="1" then kCode=Enum.KeyCode.One 
-        elseif keyName=="2" then kCode=Enum.KeyCode.Two 
-        elseif keyName=="3" then kCode=Enum.KeyCode.Three 
-        elseif keyName=="4" then kCode=Enum.KeyCode.Four 
-        else kCode=Enum.KeyCode[keyName] end
+        if sKey == "1" then kCode = Enum.KeyCode.One 
+        elseif sKey == "2" then kCode = Enum.KeyCode.Two 
+        elseif sKey == "3" then kCode = Enum.KeyCode.Three 
+        elseif sKey == "4" then kCode = Enum.KeyCode.Four 
+        elseif Enum.KeyCode[sKey] then kCode = Enum.KeyCode[sKey] 
+        else kCode = Enum.KeyCode.One end -- Fallback safety
         
         local vData = {ID=id, Key=kCode, Slot=slotIdx, Button=btn}
         
-        -- [LOGIKA KUNCI] Cek apakah ini tombol senjata 1-4
-        local isWeaponKey = (keyName == "1" or keyName == "2" or keyName == "3" or keyName == "4")
+        -- [LOGIKA KUNCI YANG DIPERBAIKI]
+        -- Menggunakan tostring(sKey) memastikan deteksi 100% akurat
+        local isWeaponKey = (sKey == "1" or sKey == "2" or sKey == "3" or sKey == "4")
         
-        -- EVENT SAAT DISENTUH (InputBegan)
+        -- EVENT SAAT DITEKAN (InputBegan)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- [[ PERBAIKAN UTAMA: LOGIKA SENJATA LANGSUNG ]] --
+                -- ====================================================
+                -- 1. PRIORITAS UTAMA: SENJATA (1-4) -> PASTI INSTANT
+                -- ====================================================
                 if isWeaponKey then
-                    -- 1. Batalkan Skill Smart Tap jika ada (Reset status skill)
+                    -- Reset status Smart Skill jika ada yang sedang aktif (Hijau)
                     if CurrentSmartKeyData then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                         if old then 
@@ -823,25 +830,33 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         CurrentSmartKeyData = nil 
                     end
 
-                    -- 2. PANGGIL EQUIP LANGSUNG (Bypass Keyboard)
-                    -- Ini akan memanggil fungsi equipWeapon yang baru (Humanoid:EquipTool)
+                    -- LANGSUNG GANTI SENJATA (Bypass Mode Smart)
                     if vData.Slot then 
-                        equipWeapon(vData.Slot) 
+                        equipWeapon(vData.Slot) -- Memanggil fungsi equipWeapon
                     end
                     
-                    -- Kita TIDAK memanggil VIM:SendKeyEvent di sini agar tidak double input
-                    
-                    return -- Berhenti di sini, jangan lanjut ke logic skill
+                    -- Efek Visual Klik Singkat (Opsional, agar terasa ditekan)
+                    btn.BackgroundColor3 = Theme.Accent
+                    btn.TextColor3 = Color3.new(0,0,0)
+                    task.delay(0.05, function()
+                        btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                        btn.TextColor3 = Theme.Accent
+                    end)
+
+                    return -- STOP DISINI! Jangan lanjut ke logika Skill di bawah
                 end
                 
-                -- LOGIKA UNTUK SKILL (Z, X, C...)
+                -- ====================================================
+                -- 2. LOGIKA SKILL (Z, X, C, V, F...)
+                -- ====================================================
+                
                 if SkillMode == "INSTANT" then
-                    -- Mode Instant Skill: Tekan & Tahan
+                    -- Mode Instant Skill
                     if vData.Slot then equipWeapon(vData.Slot) end
                     VIM:SendKeyEvent(true, kCode, false, game)
                     
                 elseif SkillMode == "SMART" then
-                    -- Mode Smart Tap Skill: Pilih dulu (Jadi Hijau)
+                    -- Mode Smart Tap Skill (Pilih dulu baru tembak)
                     if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                         if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
@@ -853,7 +868,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         btn.TextColor3 = Theme.Accent
                     else
                         CurrentSmartKeyData = vData
-                        btn.BackgroundColor3 = Theme.Green -- Visual Hijau TANDA READY
+                        btn.BackgroundColor3 = Theme.Green 
                         btn.TextColor3 = Theme.Bg
                     end
                 end
@@ -863,8 +878,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         -- EVENT SAAT DILEPAS (InputEnded)
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                -- Hanya berlaku untuk Skill Instant (Z-F). 
-                -- Tombol 1-4 tidak perlu logic release karena pakai EquipTool.
+                -- Skill Instant perlu dilepas manual
+                -- Tombol senjata (1-4) TIDAK PERLU dilepas karena EquipTool sifatnya trigger sekali
                 if not isWeaponKey and SkillMode == "INSTANT" then
                     VIM:SendKeyEvent(false, kCode, false, game)
                 end
