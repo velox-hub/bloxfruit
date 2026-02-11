@@ -73,8 +73,10 @@ local WeaponData = {
 -- ANTI AFK
 local VirtualUser = game:GetService("VirtualUser")
 LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new())
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.new())
+    end)
 end)
 
 -- ==============================================================================
@@ -158,12 +160,15 @@ end
 
 local JoyOuter, JoyKnob, JoyDrag, ToggleBtn, JoyContainer, LockBtn, ScreenGui
 
+-- [PERBAIKAN] Fungsi Transparansi yang Benar
 UpdateTransparencyFunc = function()
     local t = GlobalTransparency
     
     if ToggleBtn then 
-        ToggleBtn.BackgroundTransparency = t
-        ToggleBtn.TextTransparency = t 
+        -- Mempertahankan style 0.2 saat visible, dan memudar saat slider naik
+        ToggleBtn.BackgroundTransparency = math.clamp(0.2 + t, 0.2, 1)
+        ToggleBtn.ImageTransparency = t -- Memastikan icon ikut menghilang
+        -- ToggleBtn.TextTransparency = t (Tidak perlu jika hanya pakai Image)
         if ToggleBtn:FindFirstChild("UIStroke") then ToggleBtn.UIStroke.Transparency = t end
     end
     
@@ -177,7 +182,12 @@ UpdateTransparencyFunc = function()
     
     for _, item in pairs(ActiveVirtualKeys) do 
         local btn = item.Button
-        btn.BackgroundTransparency = t
+        -- Cek tipe tombol agar tidak salah warna
+        if btn.BackgroundColor3 == Color3.fromRGB(0,0,0) then
+            btn.BackgroundTransparency = t
+        else
+            btn.BackgroundTransparency = t
+        end
         btn.TextTransparency = t
         if btn:FindFirstChild("UIStroke") then btn.UIStroke.Transparency = t end
     end
@@ -357,9 +367,11 @@ local function executeComboSequence(idx)
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     -- Simulasi Tahan M1
                     local vp = Camera.ViewportSize
-                    VIM:SendTouchEvent(5, 0, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y) -- Touch Down
+                    local x = (vp.X / 2) + M1_Offset.X
+                    local y = (vp.Y / 2) + M1_Offset.Y
+                    VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
                     task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                    VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y) -- Touch Up
+                    VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
                 else
                     -- Jika Mode Tap Biasa
                     TapM1()
@@ -368,7 +380,7 @@ local function executeComboSequence(idx)
                     task.wait(0.03)
                     TapM1()
                 end    
-            end      
+            end       
             -- [4] Jeda Antar Langkah
             task.wait(0.2)
         end
@@ -441,7 +453,7 @@ ToggleBtn.Size = UDim2.new(0, 50, 0, 50)
 ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
 ToggleBtn.BackgroundColor3 = Theme.Sidebar -- Kotak latar belakang gelap
 ToggleBtn.BackgroundTransparency = 0.2 -- Sedikit transparan
-ToggleBtn.Image = "rbxthumb://type=Asset&id=125170945964970&w=420&h=420" 
+ToggleBtn.Image = "rbxassetid://73551285041476" 
 ToggleBtn.ImageColor3 = Color3.fromRGB(255, 255, 255) 
 ToggleBtn.Parent = ScreenGui
 ToggleBtn.ZIndex = 501
@@ -809,7 +821,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
     
     -- [1] BERSIHKAN TOMBOL LAMA (Refresh jika ada duplikat)
     if ActiveVirtualKeys[id] then 
-        ActiveVirtualKeys[id].Button:Destroy(); ActiveVirtualKeys[id]=nil
+        if ActiveVirtualKeys[id].Button then ActiveVirtualKeys[id].Button:Destroy() end
+        ActiveVirtualKeys[id]=nil
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Element; VirtualKeySelectors[id].TextColor3=Theme.Text end
         if SkillMode == "SMART" and CurrentSmartKeyData and CurrentSmartKeyData.ID == id then CurrentSmartKeyData = nil end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end
@@ -1327,7 +1340,7 @@ local function SaveToFile(configName, data)
     local fullData = {}
     if isfile(FileName) then
         local success, result = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
-        if success then fullData = result end
+        if success and type(result) == "table" then fullData = result end
     end
     fullData[configName] = data
     fullData["LastUsed"] = configName
@@ -1335,86 +1348,101 @@ local function SaveToFile(configName, data)
     ShowNotification("Saved: " .. configName, Theme.Green)
 end
 
+-- [PERBAIKAN] Load Function yang Lebih Aman
 local function LoadSpecific(configName)
     if not isfile(FileName) then return end
     local success, fileData = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
     if not success or not fileData[configName] then return end
     
-    local data = fileData[configName]
-    
-    local function applyLayout(obj, layoutData)
-        if not obj or not layoutData then return end
-        obj.Position = UDim2.new(layoutData.px, layoutData.po, layoutData.py, layoutData.poy)
-        obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
-    end
+    -- Pcall wrapper untuk mencegah crash saat loading data corrupt
+    local applySuccess, err = pcall(function()
+        local data = fileData[configName]
+        
+        local function applyLayout(obj, layoutData)
+            if not obj or not layoutData then return end
+            obj.Position = UDim2.new(layoutData.px, layoutData.po, layoutData.py, layoutData.poy)
+            obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
+        end
 
-    if data.M1_OffsetX and data.M1_OffsetY then
-        M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
-    end
+        if data.M1_OffsetX and data.M1_OffsetY then
+            M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
+        end
 
-    GlobalTransparency = data.Transparency or 0
-    TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
-    UpdateTransparencyFunc()
-    
-    IsLayoutLocked = data.LayoutLocked or false
-    updateLockState()
+        GlobalTransparency = data.Transparency or 0
+        -- Update posisi slider knob
+        TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
+        UpdateTransparencyFunc()
+        
+        IsLayoutLocked = data.LayoutLocked or false
+        updateLockState()
 
-    IsJoystickEnabled = data.JoystickEnabled or false
-    JoyContainer.Visible = IsJoystickEnabled
-    if IsJoystickEnabled then 
-        JoyToggle.Text = "JOYSTICK: ON"
-        JoyToggle.BackgroundColor3 = Theme.Green
-    else
-        JoyToggle.Text = "JOYSTICK: OFF"
-        JoyToggle.BackgroundColor3 = Theme.Red
-    end
+        IsJoystickEnabled = data.JoystickEnabled or false
+        JoyContainer.Visible = IsJoystickEnabled
+        if IsJoystickEnabled then 
+            JoyToggle.Text = "JOYSTICK: ON"
+            JoyToggle.BackgroundColor3 = Theme.Green
+        else
+            JoyToggle.Text = "JOYSTICK: OFF"
+            JoyToggle.BackgroundColor3 = Theme.Red
+        end
 
-    SkillMode = data.SkillMode or "INSTANT"
-    if SkillMode == "SMART" then 
-        ModeBtn.Text = "MODE: SMART TAP"
-        ModeBtn.BackgroundColor3 = Theme.Blue
-    else
-        ModeBtn.Text = "MODE: INSTANT"
-        ModeBtn.BackgroundColor3 = Theme.Green
-    end
+        SkillMode = data.SkillMode or "INSTANT"
+        if SkillMode == "SMART" then 
+            ModeBtn.Text = "MODE: SMART TAP"
+            ModeBtn.BackgroundColor3 = Theme.Blue
+        else
+            ModeBtn.Text = "MODE: INSTANT"
+            ModeBtn.BackgroundColor3 = Theme.Green
+        end
 
-    if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
-    if data.Pos_Toggle then applyLayout(ToggleBtn, data.Pos_Toggle) end
-    if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
-    if data.Pos_JoyOuter then 
-        applyLayout(JoyOuter, data.Pos_JoyOuter)
-        local size = data.Pos_JoyOuter.so
-        createCorner(JoyOuter, size)
-    end
+        if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
+        if data.Pos_Toggle then applyLayout(ToggleBtn, data.Pos_Toggle) end
+        if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
+        if data.Pos_JoyOuter then 
+            applyLayout(JoyOuter, data.Pos_JoyOuter)
+            local size = data.Pos_JoyOuter.so
+            createCorner(JoyOuter, size)
+        end
 
-    for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end
-    Combos = {}
-    for _, vData in pairs(ActiveVirtualKeys) do vData.Button:Destroy() end
-    ActiveVirtualKeys = {}
-    
-    if data.Combos then
-        for _, cData in ipairs(data.Combos) do
-            CreateComboButtonFunc(cData.ID, cData.Steps)
-            local createdCombo = Combos[#Combos] 
-            if createdCombo and cData.Layout then
-                applyLayout(createdCombo.Button, cData.Layout)
+        -- Clear existing buttons safely
+        for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end
+        Combos = {}
+        for _, vData in pairs(ActiveVirtualKeys) do if vData.Button then vData.Button:Destroy() end end
+        ActiveVirtualKeys = {}
+        
+        if data.Combos and type(data.Combos) == "table" then
+            for _, cData in ipairs(data.Combos) do
+                CreateComboButtonFunc(cData.ID, cData.Steps)
+                local createdCombo = Combos[#Combos] 
+                if createdCombo and cData.Layout then
+                    applyLayout(createdCombo.Button, cData.Layout)
+                end
             end
         end
-    end
-    
-    if data.VirtualKeys then
-        for _, vData in ipairs(data.VirtualKeys) do
-            toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
-            local createdKey = ActiveVirtualKeys[vData.ID]
-            if createdKey and vData.Layout then
-                applyLayout(createdKey.Button, vData.Layout)
-                if vData.Layout.so then createCorner(createdKey.Button, 12) end
+        
+        if data.VirtualKeys and type(data.VirtualKeys) == "table" then
+            for _, vData in ipairs(data.VirtualKeys) do
+                -- Pastikan keyname ada agar tidak error
+                if vData.KeyName then
+                    toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
+                    local createdKey = ActiveVirtualKeys[vData.ID]
+                    if createdKey and vData.Layout then
+                        applyLayout(createdKey.Button, vData.Layout)
+                        if vData.Layout.so then createCorner(createdKey.Button, 12) end
+                    end
+                end
             end
         end
+        
+        if ResizerUpdateFunc then ResizerUpdateFunc() end
+    end)
+
+    if applySuccess then
+        ShowNotification("Loaded: " .. configName, Theme.Blue)
+    else
+        warn("Velox Load Error: " .. tostring(err))
+        ShowNotification("Load Failed (Check Console)", Theme.Red)
     end
-    
-    if ResizerUpdateFunc then ResizerUpdateFunc() end
-    ShowNotification("Loaded: " .. configName, Theme.Blue)
 end
 
 -- [TAMBAHAN BARU] Isi Tab Settings
@@ -1503,7 +1531,7 @@ local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function()
     end 
 end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
 
-local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local r = readfile(FileName); local all = HttpService:JSONDecode(r); for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local d = Instance.new("TextButton"); d.Size=UDim2.new(1,0,0,30); d.Position=UDim2.new(0,0,0,70); d.BackgroundColor3=Theme.Red; d.Text="DELETE"; d.TextColor3=Theme.Bg; d.Parent=c2; createCorner(d,6); d.ZIndex=2004; d.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local all = HttpService:JSONDecode(r); for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local d = Instance.new("TextButton"); d.Size=UDim2.new(1,0,0,30); d.Position=UDim2.new(0,0,0,70); d.BackgroundColor3=Theme.Red; d.Text="DELETE"; d.TextColor3=Theme.Bg; d.Parent=c2; createCorner(d,6); d.ZIndex=2004; d.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
 local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
     ShowPopup("CONFIRM RESET?", function(c)
         local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
@@ -1595,12 +1623,12 @@ ShowNotification("Custom Layout: READY", Theme.Green)
 task.wait(1)
 ShowNotification("Mobile Engine: ONLINE", Theme.Blue)
 
--- Auto Load Last Config
+-- [PERBAIKAN] Auto Load Last Config (Safe Mode)
 if isfile(FileName) then 
     local s, r = pcall(function() return readfile(FileName) end)
     if s then 
-        local data = HttpService:JSONDecode(r)
-        if data["LastUsed"] and data[data["LastUsed"]] then 
+        local success, data = pcall(function() return HttpService:JSONDecode(r) end)
+        if success and data and data["LastUsed"] and data[data["LastUsed"]] then 
             LoadSpecific(data["LastUsed"]) 
             CurrentConfigName = data["LastUsed"]
         end 
