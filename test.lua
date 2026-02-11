@@ -1,23 +1,25 @@
 -- ==============================================================================
--- [ VELOX V2.2 - NO-INTERRUPT TAP & UI JUMP FIX ]
--- Fix Tap: Uses tool:Activate() (Doesn't stop Joystick/Movement)
--- Fix Jump: Targets TouchControlFrame.JumpButton directly
--- Config: Weapon 1-4 Toggle, Dodge, Ken, Race, Z-F included.
--- Removed: Soru & Haki
+-- [ VELOX V2.3 - MULTI-TOUCH FIX ]
+-- Fix M1: Uses Virtual Touch Event (ID 5) at Center Screen (No Visuals, No Interrupt)
+-- Fix Jump: Clicks exact UI Coordinates of JumpButton (Touch ID 6)
+-- Fix Equip: Toggle Logic (1-4)
 -- ==============================================================================
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
 
 -- UI CONFIGURATION
 local Theme = {
     Bg      = Color3.fromRGB(20, 20, 25),
     Sidebar = Color3.fromRGB(30, 30, 35),
-    Accent  = Color3.fromRGB(0, 255, 180), -- Teal Green
+    Accent  = Color3.fromRGB(0, 255, 180),
     Text    = Color3.fromRGB(240, 240, 240),
     Red     = Color3.fromRGB(255, 80, 80),
     Blue    = Color3.fromRGB(50, 150, 255),
@@ -38,21 +40,21 @@ local WeaponData = {
 }
 
 -- ==============================================================================
--- [1] UTILITY: FIRE UI (UPDATED)
+-- [1] UTILITY: VIRTUAL TOUCH (THE FIX)
 -- ==============================================================================
+
+-- Fungsi ini mensimulasikan sentuhan jari pada koordinat X, Y
+-- touchID: Angka unik untuk membedakan jari (Joystick biasanya ID 0 atau 1)
+-- Kita pakai ID 5 dan 6 agar tidak bentrok.
+local function SimulateTouch(touchID, x, y)
+    -- State: 0 = Begin (Tekan), 2 = End (Lepas)
+    VirtualInputManager:SendTouchEvent(touchID, 0, x, y)
+    task.wait(0.05)
+    VirtualInputManager:SendTouchEvent(touchID, 2, x, y)
+end
 
 local function FireUI(btn)
     if not btn then return end
-    
-    -- Kita tembak semua kemungkinan sinyal agar UI Blox Fruit merespon
-    -- 1. InputBegan (Touch) - Paling penting untuk Jump Button Mobile
-    for _, c in pairs(getconnections(btn.InputBegan)) do 
-        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.Begin})
-        task.wait()
-        c:Fire({UserInputType=Enum.UserInputType.Touch, UserInputState=Enum.UserInputState.End})
-    end
-
-    -- 2. Activated/Click (Backup untuk tombol Skill)
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
     for _, c in pairs(getconnections(btn.MouseButton1Click)) do c:Fire() end
 end
@@ -61,35 +63,45 @@ end
 -- [2] CORE LOGIC
 -- ==============================================================================
 
--- [A] SAFE TAP (TIDAK MENGGANGGU JOYSTICK)
-local function SafeTapAttack()
-    local char = LocalPlayer.Character
-    if not char then return end
+-- [A] M1 TAP CENTER (INVISIBLE TOUCH)
+local function TapCenterScreen()
+    local viewport = Camera.ViewportSize
+    local x, y = viewport.X / 2, viewport.Y / 2
     
-    local tool = char:FindFirstChildOfClass("Tool")
-    if tool then
-        tool:Activate() -- Ini hanya mengayunkan senjata tanpa menyentuh layar
-    else
-        -- Jika tidak memegang tool, kita coba cari Combat di backpack dan equip sebentar (opsional)
-        -- Tapi biasanya player selalu pegang Combat/Melee.
-    end
+    -- Gunakan Touch ID 5 (Jari ke-5)
+    -- Ini tidak akan mengganggu Joystick (Jari ke-1)
+    SimulateTouch(5, x, y)
 end
 
--- [B] JUMP VIA UI (TARGET PATH PRESISI)
+-- [B] JUMP VIA UI COORDINATES
 local function TriggerJumpUI()
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     if not PGui then return end
     
-    -- Path: TouchGui -> TouchControlFrame -> JumpButton
     local TouchGui = PGui:FindFirstChild("TouchGui")
     if TouchGui then
         local TouchControl = TouchGui:FindFirstChild("TouchControlFrame")
         if TouchControl then
             local JumpBtn = TouchControl:FindFirstChild("JumpButton")
-            if JumpBtn then
-                FireUI(JumpBtn) -- Memicu tombol asli
+            if JumpBtn and JumpBtn.Visible then
+                -- Ambil Posisi Tombol di Layar
+                local absPos = JumpBtn.AbsolutePosition
+                local absSize = JumpBtn.AbsoluteSize
+                
+                -- Hitung titik tengah tombol
+                local centerX = absPos.X + (absSize.X / 2)
+                local centerY = absPos.Y + (absSize.Y / 2)
+                
+                -- Sentuh koordinat tombol tersebut dengan Touch ID 6
+                SimulateTouch(6, centerX, centerY)
+                return
             end
         end
+    end
+    
+    -- Fallback jika UI tidak ketemu (misal main di PC mode tapi pakai script HP)
+    if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.Jump = true
     end
 end
 
@@ -100,7 +112,6 @@ local function EquipWeapon(slotIdx)
     local targetInfo = WeaponData[slotIdx]; if not targetInfo then return end
 
     local currentTool = char:FindFirstChildOfClass("Tool")
-    
     if currentTool and currentTool.ToolTip == targetInfo.tooltip then
         hum:UnequipTools()
     else
@@ -117,7 +128,7 @@ local function EquipWeapon(slotIdx)
     end
 end
 
--- [D] SKILL & CONTEXT UI TRIGGER
+-- [D] SKILL & CONTEXT TRIGGERS
 local function TriggerMainSkill(key)
     local PGui = LocalPlayer:FindFirstChild("PlayerGui")
     local SkillsFrame = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
@@ -207,16 +218,16 @@ local function AddBtn(id, text, callback, size, color)
 end
 
 -- ==============================================================================
--- [4] LAYOUT SETUP
+-- [4] BUTTON LAYOUT
 -- ==============================================================================
 
--- [ROW 1] Weapons (Toggle)
+-- [ROW 1] Weapons
 AddBtn("1", "1", function() EquipWeapon(1) end).Position = UDim2.new(0.65, 0, 0.45, 0)
 AddBtn("2", "2", function() EquipWeapon(2) end).Position = UDim2.new(0.75, 0, 0.45, 0)
 AddBtn("3", "3", function() EquipWeapon(3) end).Position = UDim2.new(0.85, 0, 0.45, 0)
 AddBtn("4", "4", function() EquipWeapon(4) end).Position = UDim2.new(0.95, 0, 0.45, 0)
 
--- [ROW 2] Main Skills
+-- [ROW 2] Skills
 AddBtn("Z", "Z", function() TriggerMainSkill("Z") end).Position = UDim2.new(0.65, 0, 0.55, 0)
 AddBtn("X", "X", function() TriggerMainSkill("X") end).Position = UDim2.new(0.75, 0, 0.55, 0)
 AddBtn("C", "C", function() TriggerMainSkill("C") end).Position = UDim2.new(0.85, 0, 0.55, 0)
@@ -228,11 +239,11 @@ AddBtn("Ken", "KEN", function() TriggerContext("Ken") end).Position = UDim2.new(
 AddBtn("Race", "RACE", function() TriggerContext("RaceAbility") end).Position = UDim2.new(0.70, 0, 0.35, 0)
 AddBtn("Dodge", "DODGE", function() TriggerContext("Dodge") end).Position = UDim2.new(0.80, 0, 0.35, 0)
 
--- [ROW 4] Actions (TAP & JUMP)
-local bJump = AddBtn("Jump", "JUMP", TriggerJump, UDim2.new(0, 60, 0, 60), Theme.Blue)
-bJump.Position = UDim2.new(0.90, 0, 0.65, 0) -- Area jempol bawah
+-- [ROW 4] Actions
+local bJump = AddBtn("Jump", "JUMP", TriggerJumpUI, UDim2.new(0, 60, 0, 60), Theme.Blue)
+bJump.Position = UDim2.new(0.90, 0, 0.65, 0)
 
-local bTap = AddBtn("Tap", "TAP", SafeTapAttack, UDim2.new(0, 60, 0, 60), Theme.Red)
-bTap.Position = UDim2.new(0.90, 0, 0.25, 0) -- Area jempol atas
+local bTap = AddBtn("Tap", "TAP", TapCenterScreen, UDim2.new(0, 60, 0, 60), Theme.Red)
+bTap.Position = UDim2.new(0.90, 0, 0.25, 0)
 
-print("Velox v2.2 Loaded: Joystick-Safe Tap & UI Jump")
+print("Velox v2.3 Loaded: Multi-Touch Enabled")
