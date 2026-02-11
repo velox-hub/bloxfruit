@@ -740,12 +740,14 @@ end)
 -- ==============================================================================
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
+    -- Hapus tombol lama jika ada
     if ActiveVirtualKeys[id] then 
         ActiveVirtualKeys[id].Button:Destroy(); ActiveVirtualKeys[id]=nil
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Element; VirtualKeySelectors[id].TextColor3=Theme.Text end
         if SkillMode == "SMART" and CurrentSmartKeyData and CurrentSmartKeyData.ID == id then CurrentSmartKeyData = nil end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end; if RefreshControlUI then RefreshControlUI() end
     else
+        -- Buat tombol baru
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 50, 0, 50)
         btn.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -766,24 +768,34 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         if keyName=="1" then kCode=Enum.KeyCode.One elseif keyName=="2" then kCode=Enum.KeyCode.Two elseif keyName=="3" then kCode=Enum.KeyCode.Three elseif keyName=="4" then kCode=Enum.KeyCode.Four else kCode=Enum.KeyCode[keyName] end
         
         local vData = {ID=id, Key=kCode, Slot=slotIdx, Button=btn}
-        local isWeaponKey = table.find({"1","2","3","4"}, keyName)
+        
+        -- Cek apakah ini tombol 1, 2, 3, atau 4 (Senjata)
+        local isWeaponKey = (keyName == "1" or keyName == "2" or keyName == "3" or keyName == "4")
         
         -- [EVENT SAAT JARI MENYENTUH TOMBOL]
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- KASUS 1: TOMBOL SENJATA (1, 2, 3, 4)
+                -- PRIORITAS 1: JIKA INI TOMBOL SENJATA (1-4)
                 if isWeaponKey then
                     VIM:SendKeyEvent(true, kCode, false, game)
                     task.wait(0.05)
                     VIM:SendKeyEvent(false, kCode, false, game)
                     
-                -- KASUS 2: TOMBOL SKILL (Z, X, C...) - MODE INSTANT
+                    -- Efek Visual Singkat (Flash)
+                    btn.BackgroundColor3 = Theme.Accent
+                    btn.TextColor3 = Color3.new(0,0,0)
+                    task.delay(0.1, function()
+                        btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                        btn.TextColor3 = Theme.Accent
+                    end)
+                    
+                -- PRIORITAS 2: JIKA MODE INSTANT AKTIF
                 elseif SkillMode == "INSTANT" then
                     if vData.Slot then equipWeapon(vData.Slot) end
                     VIM:SendKeyEvent(true, kCode, false, game)
                     
-                -- KASUS 3: TOMBOL SKILL - MODE SMART TAP
+                -- PRIORITAS 3: JIKA MODE SMART TAP AKTIF
                 elseif SkillMode == "SMART" then
                     if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
@@ -796,9 +808,11 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         btn.TextColor3 = Theme.Accent
                     else
                         CurrentSmartKeyData = vData
-                        btn.BackgroundColor3 = Theme.Green
+                        btn.BackgroundColor3 = Theme.Green -- Jadi Hijau (Ready)
                         btn.TextColor3 = Theme.Bg
-                        ShowNotification("Skill "..id.." Ready", Theme.Green)
+                        
+                        -- [PERBAIKAN] Notifikasi DIHAPUS agar tidak menghalangi pandangan
+                        -- ShowNotification("Skill "..id.." Ready", Theme.Green) 
                     end
                 end
             end
@@ -915,9 +929,9 @@ local AddTitle = Instance.new("TextLabel"); AddTitle.Size=UDim2.new(0.95,0,0,20)
 local VKeyAddBox = Instance.new("Frame"); VKeyAddBox.Size=UDim2.new(0.95,0,0,80); VKeyAddBox.BackgroundColor3=Theme.Sidebar; VKeyAddBox.LayoutOrder=6; VKeyAddBox.Parent=P_Lay; createCorner(VKeyAddBox,6)
 
 -- BUTTONS FOR ADDER
-local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.45,0,0,30); TypeBtn.Position=UDim2.new(0.03,0,0.1,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6); TypeBtn.TextScaled = true 
-local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.45,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0.1,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6); KeyBtn.TextScaled = true 
-local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(0.94,0,0,30); AddVKeyBtn.Position=UDim2.new(0.03,0,0.55,0); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6); AddVKeyBtn.TextScaled = true 
+local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.45,0,0,30); TypeBtn.Position=UDim2.new(0.03,0,0.1,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6)
+local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.45,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0.1,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6)
+local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(0.94,0,0,30); AddVKeyBtn.Position=UDim2.new(0.03,0,0.55,0); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6) 
 
 local selW, selK = "Melee", "Z"
 local SkillLimits = { ["Melee"] = {"Z", "X", "C"}, ["Fruit"] = {"Z", "X", "C", "V", "F"}, ["Sword"] = {"Z", "X"}, ["Gun"]   = {"Z", "X"} }
