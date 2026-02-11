@@ -338,92 +338,69 @@ end
 
 
 -- ==============================================================================
--- [4] INPUT HANDLERS (AUTO FINISH & SMART TAP SYNC)
+-- [4] INPUT HANDLERS (FIXED FOR SMART HOLD & CHARGE)
 -- ==============================================================================
 
-local IsSmartHolding = false -- Variable untuk melacak sentuhan jari user
-
-local function executeComboSequence(idx)
-    if isChatting() then return end 
-
-    local data = Combos[idx]
-    if not data or not data.Button then return end
-    
-    if isRunning then return end
-    isRunning = true
-    
-    local btn = data.Button
-    btn.Text = "STOP"; btn.BackgroundColor3 = Theme.Red
-    if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Red end
-    
-    task.spawn(function()
-        for i, step in ipairs(data.Steps) do
-            if not isRunning then break end
-            
-            local char = LocalPlayer.Character
-            if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
-                isRunning = false; break 
-            end
-            
-            -- [1] Equip Senjata (Force Equip, bukan toggle)
-            if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
-            
-            -- [2] Trigger Skill UI
-            pressKey(step.Key)
-            
-            -- [3] Jeda Serang (Agar skill keluar sebelum M1)
-            task.wait(0.03)
-            
-            -- [4] Delay Tambahan (Jika diatur di editor)
-            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
-            if SkillMode == "SMART" and i == 1 then
-                setSkillState(step.Key, true)
-                -- Tunggu sampai user melepas jari (Manual Hold)
-                -- Skill sudah ditembakkan oleh pressKey, sekarang kita biarkan user menahan M1 (via sentuhan layar asli)
-                while IsSmartHolding and isRunning do
-                    task.wait()
-                end
-            else
-                -- [LOGIKA OTOMATIS STEP 2+ ATAU INSTANT MODE]
-                -- Mendukung setting "HOLD" dari UI Editor
-                
-                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    -- Simulasi Tahan M1
-                    local vp = Camera.ViewportSize
-                    VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- Touch Down
-                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- Touch Up
-                else
-                    -- Jika Mode Tap Biasa
-                    task.wait(0.03)
-                    TapM1()
-                    task.wait(0.03)
-                    TapM1()
-                    task.wait(0.03)
-                    TapM1()
-            
-                end
-            end
-            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
-            
-            -- [4] Jeda Antar Langkah
-            task.wait(0.2)
-        end
-        
-        -- [CLEANUP] 
-        local vp = Camera.ViewportSize
-        VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) 
-        isRunning = false
-        SelectedComboID = nil 
-        
-        if btn then 
-            btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
-            if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
-        end
-    end)
-end
-
+local IsSmartHolding = false 
 local SmartTouchObject = nil 
+
+-- [EVENT: KLIK LAYAR / M1 MANUAL]
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if isChatting() or gameProcessed then return end 
+
+    if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+        
+        -- A. TRIGGER SKILL SMART (LOGIKA BARU: HOLD & CHARGE)
+        if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
+            SmartTouchObject = input -- Simpan input jari ini
+            IsSmartHolding = true
+            
+            -- 1. Mulai Tekan Skill (Charge start)
+            setSkillState(CurrentSmartKeyData.KeyName, true)
+            
+            -- 2. Opsional: Kirim sinyal sentuh ke koordinat jari (untuk aim)
+            local x, y = input.Position.X, input.Position.Y
+            VIM:SendTouchEvent(5, 0, x, y) -- Touch Begin di lokasi jari
+            
+            return -- Jangan jalankan logika lain
+        end
+        
+        -- B. TRIGGER COMBO (Tetap sama)
+        if SelectedComboID ~= nil and not isRunning then
+            IsSmartHolding = true 
+            executeComboSequence(SelectedComboID)
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    -- Deteksi lepas jari untuk Smart Combo
+    if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+        IsSmartHolding = false 
+    end
+
+    -- C. LEPAS SKILL SMART (LOGIKA BARU: RELEASE / FIRE)
+    if input == SmartTouchObject and SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
+        
+        -- 1. Lepas Tekanan Skill (Fire!)
+        setSkillState(CurrentSmartKeyData.KeyName, false)
+        
+        -- 2. Lepas sentuhan layar virtual
+        local x, y = input.Position.X, input.Position.Y
+        VIM:SendTouchEvent(5, 2, x, y) -- Touch End
+        
+        -- 3. Reset Visual Tombol UI (Kembali ke hitam)
+        if ActiveVirtualKeys[CurrentSmartKeyData.ID] then
+            local btn = ActiveVirtualKeys[CurrentSmartKeyData.ID].Button
+            btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+            btn.TextColor3 = Theme.Accent
+        end
+        
+        -- 4. Bersihkan Data
+        CurrentSmartKeyData = nil
+        SmartTouchObject = nil
+    end
+end)
 
 
 
@@ -894,63 +871,60 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
         -- [3] EVENT SAAT TOMBOL DITEKAN (Touch Down)
+        -- [3] EVENT SAAT TOMBOL UI DITEKAN
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- A. LOGIKA KHUSUS M1 & DODGE (Prioritas Tertinggi)
+                -- A. LOGIKA KHUSUS M1 & DODGE
                 if id == "M1" then TapM1() return end
                 if id == "Dodge" then TriggerDodge() return end
 
-                -- B. LOGIKA SENJATA (1-4)
+                -- B. LOGIKA SENJATA (1-4) - Langsung Equip
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
-                    
-                    -- Visual Feedback (Kedip)
-                    btn.BackgroundColor3 = Theme.Accent
-                    btn.TextColor3 = Color3.new(0,0,0)
+                    btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     task.delay(0.1, function()
-                        btn.BackgroundColor3 = Color3.new(0,0,0)
-                        btn.TextColor3 = Theme.Accent
+                        btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                     end)
-                    return -- Stop, jangan lanjut ke logika skill
+                    return 
                 end
                 
                 -- C. LOGIKA SKILL (Z, X, C, V, F)
                 if isSkillKey then
                     if SkillMode == "INSTANT" then
-                        
-                        -- 2. Tekan Skill UI
+                        -- Mode Lama: Langsung tembak
                         pressKey(kn)
-                        
-                        -- 3. Jeda Serang (Agar skill keluar dulu sebelum M1)
                         task.wait(0.03)
-                        
-                        -- 4. HOLD M1 (Simulasi Jari Hantu Menahan Layar)
                         local vp = Camera.ViewportSize
-                        VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- 0 = TouchBegin (Tahan)
-                        
-                        -- Visual Efek (Warna berubah saat ditahan)
-                        btn.BackgroundColor3 = Theme.Accent
-                        btn.TextColor3 = Color3.new(0,0,0)
+                        VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2)
+                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                         
                     elseif SkillMode == "SMART" then
+                        -- [PERBAIKAN DISINI]
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
-                            -- Jika diklik lagi saat hijau -> Batal (Disarm)
-                            setSkillState(kn, false)
+                            -- Jika tombol ditekan lagi saat sedang aktif -> BATALKAN (Cancel)
                             CurrentSmartKeyData = nil
-                            btn.BackgroundColor3 = Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent
+                            btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                            btn.TextColor3 = Theme.Accent
                         else
-                            -- Siapkan Skill (Arming)
+                            -- Jika tombol ditekan pertama kali -> SIAPKAN (Arming)
+                            -- Reset tombol sebelumnya jika ada
                             if CurrentSmartKeyData then
-                                setSkillState(CurrentSmartKeyData.KeyName, false)
                                 local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
-                                if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
+                                if old then 
+                                    old.Button.BackgroundColor3=Color3.fromRGB(0,0,0)
+                                    old.Button.TextColor3=Theme.Accent 
+                                end
                             end
                             
                             if slotIdx then equipWeapon(slotIdx, false) end
-                            setSkillState(kn, true) -- LANGSUNG TAHAN SKILL DI GAME
+                            
+                            -- PENTING: JANGAN panggil setSkillState(kn, true) disini!
+                            -- Kita hanya menyimpan data dan mengubah warna UI.
                             
                             CurrentSmartKeyData = vData
+                            
+                            -- Ubah Visual jadi Hijau (Tanda Siap)
                             btn.BackgroundColor3 = Theme.Green
                             btn.TextColor3 = Theme.Bg
                         end
