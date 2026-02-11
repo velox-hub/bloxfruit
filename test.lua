@@ -1,15 +1,13 @@
 -- ==============================================================================
--- [ VELOX LITE V3.1 - CALIBRATED AIM ]
--- Fix: M1 Tap position is now perfectly aligned with Crosshair '⌖'
--- Method: Added GuiInset offset compensation.
--- Features: 1-4 (Toggle), Z-F, M1, Dodge.
+-- [ VELOX LITE V3.2 - ABSOLUTE SYNC ]
+-- Fix: M1 Coordinates are now mathematically identical to Crosshair Center.
+-- System: Uses 'IgnoreGuiInset = true' to match VirtualInputManager 1:1.
 -- ==============================================================================
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
-local GuiService = game:GetService("GuiService") -- Service untuk cek TopBar
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -27,11 +25,12 @@ local WeaponData = {
     [3] = {tooltip = "Sword"}, [4] = {tooltip = "Gun"}
 }
 
--- SETUP GUI
+-- SETUP GUI (CRITICAL STEP)
 if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
 local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
--- Kita MATIKAN IgnoreGuiInset agar visual tombol konsisten dengan area aman layar
-ScreenGui.IgnoreGuiInset = false 
+
+-- [PENTING] Ini membuat koordinat UI = Koordinat Touch Input
+ScreenGui.IgnoreGuiInset = true 
 
 -- VARIABLE REFERENSI
 local AimButtonRef = nil
@@ -40,25 +39,20 @@ local AimButtonRef = nil
 -- [1] CORE LOGIC
 -- ==============================================================================
 
--- M1 (CALIBRATED TAP)
+-- M1 (ABSOLUTE CENTER TAP)
 local function TapM1()
     if AimButtonRef then
-        -- 1. Ambil posisi tombol Visual
+        -- Matematika Murni: Posisi Kiri Atas + (Ukuran / 2) = Titik Tengah
         local absPos = AimButtonRef.AbsolutePosition
         local absSize = AimButtonRef.AbsoluteSize
         
-        -- 2. Ambil ukuran TopBar (Penyebab meleset ke kiri/atas)
-        local topBarOffset = GuiService:GetGuiInset() 
-        
-        -- 3. Hitung Tengah + Kompensasi Offset
-        -- Kita tambahkan topBarOffset.Y agar klik turun ke bawah sesuai visual
         local x = absPos.X + (absSize.X / 2)
-        local y = absPos.Y + (absSize.Y / 2) + topBarOffset.Y
+        local y = absPos.Y + (absSize.Y / 2)
         
-        -- Kirim Sentuhan (ID 5)
-        VirtualInputManager:SendTouchEvent(5, 0, x, y)
-        task.wait(0.01)
-        VirtualInputManager:SendTouchEvent(5, 2, x, y)
+        -- Kirim Sentuhan ke koordinat hasil hitungan (ID 5)
+        VirtualInputManager:SendTouchEvent(5, 0, x, y) -- Tekan
+        task.wait() -- 1 Frame delay
+        VirtualInputManager:SendTouchEvent(5, 2, x, y) -- Lepas
     end
 end
 
@@ -78,7 +72,7 @@ local function ToggleEquip(slot)
     end
 end
 
--- UTILS
+-- SKILLS & UTILS
 local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
@@ -141,19 +135,16 @@ local function CreateBtn(text, func, size, color, pos, isCrosshair)
     btn.Position = pos
     
     if isCrosshair then
-        -- Desain Target (Crosshair)
+        -- Visual Crosshair (Target)
         btn.BackgroundColor3 = Theme.Aim
         btn.BackgroundTransparency = 0.5
-        btn.TextStrokeTransparency = 0
-        btn.TextColor3 = Color3.new(0,0,0)
-        btn.Text = "⌖"
-        btn.TextSize = 24
+        btn.Text = ""
         
-        -- Garis bidik
-        local h = Instance.new("Frame"); h.Size=UDim2.new(1,0,0,2); h.Position=UDim2.new(0,0,0.5,-1); h.BackgroundColor3=Color3.new(0,0,0); h.BackgroundTransparency=0.5; h.Parent=btn
-        local v = Instance.new("Frame"); v.Size=UDim2.new(0,2,1,0); v.Position=UDim2.new(0.5,-1,0,0); v.BackgroundColor3=Color3.new(0,0,0); v.BackgroundTransparency=0.5; v.Parent=btn
+        -- Garis Vertikal (Tengah)
+        local v = Instance.new("Frame"); v.Size=UDim2.new(0,2,1,0); v.Position=UDim2.new(0.5,-1,0,0); v.BackgroundColor3=Color3.new(0,0,0); v.BackgroundTransparency=0.2; v.Parent=btn
+        -- Garis Horizontal (Tengah)
+        local h = Instance.new("Frame"); h.Size=UDim2.new(1,0,0,2); h.Position=UDim2.new(0,0,0.5,-1); h.BackgroundColor3=Color3.new(0,0,0); h.BackgroundTransparency=0.2; h.Parent=btn
         
-        -- Simpan Reference
         AimButtonRef = btn 
     else
         btn.BackgroundColor3 = color
@@ -173,7 +164,7 @@ local function CreateBtn(text, func, size, color, pos, isCrosshair)
     end
     
     if isCrosshair then
-        -- Crosshair Bulat
+        -- Lingkaran Crosshair
         local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = btn
         local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Aim; stroke.Thickness = 2; stroke.Parent = btn
     end
@@ -187,8 +178,8 @@ end
 -- [3] LAYOUT
 -- ==============================================================================
 
--- AIM CROSSHAIR (Patokan)
-CreateBtn("⌖", nil, UDim2.new(0,40,0,40), Theme.Aim, UDim2.new(0.5, -20, 0.4, -20), true)
+-- AIM CROSSHAIR (Patokan Pas)
+CreateBtn("", nil, UDim2.new(0,40,0,40), Theme.Aim, UDim2.new(0.5, -20, 0.4, -20), true)
 
 -- Weapons (Row 1)
 CreateBtn("1", function() ToggleEquip(1) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.45,0))
@@ -207,4 +198,4 @@ CreateBtn("F", function() TriggerSkill("F") end, UDim2.new(0,45,0,45), Theme.Bg,
 CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Theme.Red, UDim2.new(0.9,0,0.25,0))
 CreateBtn("Dodge", TriggerDodge, UDim2.new(0,50,0,50), Theme.Bg, UDim2.new(0.89,0,0.55,0))
 
-print("Velox Lite V3.1: Aim Calibrated")
+print("Velox Lite V3.2: Absolute Sync Loaded")
