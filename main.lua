@@ -377,6 +377,7 @@ local function executeComboSequence(idx)
             -- [4] Delay Tambahan (Jika diatur di editor)
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
             if SkillMode == "SMART" and i == 1 then
+                setSkillState(step.Key, true)
                 -- Tunggu sampai user melepas jari (Manual Hold)
                 -- Skill sudah ditembakkan oleh pressKey, sekarang kita biarkan user menahan M1 (via sentuhan layar asli)
                 while IsSmartHolding and isRunning do
@@ -424,24 +425,40 @@ end
 
 local SmartTouchObject = nil 
 
--- [GLOBAL INPUT LISTENER] - FIXED DUPLICATE HANDLERS
+
+
+-- [EVENT: KLIK LAYAR / M1 MANUAL]
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if isChatting() or gameProcessed then return end 
 
     if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
         
-        -- A. LOGIKA SMART SKILL (SINGLE)
+        -- A. TRIGGER SKILL SMART (SINGLE)
         if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-            SmartTouchObject = input
+            local data = CurrentSmartKeyData
+            IsSmartHolding = true -- Menandai jari menempel di layar
+            
             task.spawn(function()
-                if CurrentSmartKeyData.Slot then equipWeapon(CurrentSmartKeyData.Slot, false) end
-                pressKey(CurrentSmartKeyData.KeyName)
+                -- 1. Jalankan M1 untuk memicu skill yang sedang ditahan
+                TapM1() 
+                task.wait(0.05)
+                
+                -- 2. Lepas tekanan tombol skill di game
+                setSkillState(data.KeyName, false)
+                
+                -- 3. Reset Visual Tombol
+                if ActiveVirtualKeys[data.ID] then
+                    ActiveVirtualKeys[data.ID].Button.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                    ActiveVirtualKeys[data.ID].Button.TextColor3 = Theme.Accent
+                end
+                
+                CurrentSmartKeyData = nil
             end)
         end
         
-        -- B. LOGIKA COMBO (INSTANT & SMART)
+        -- B. TRIGGER COMBO
         if SelectedComboID ~= nil and not isRunning then
-            IsSmartHolding = true -- Tandai jari sedang menempel
+            IsSmartHolding = true -- Flag agar combo lanjut setelah jari diangkat
             executeComboSequence(SelectedComboID)
         end
     end
@@ -917,23 +934,26 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         btn.TextColor3 = Color3.new(0,0,0)
                         
                     elseif SkillMode == "SMART" then
-                        -- Mode Smart: HANYA PILIH TOMBOL (Jangan eksekusi di sini)
-                        
-                        -- Reset tombol lama jika ganti pilihan
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
-                            setSkillState(kn, false) -- Pastikan input lepas
+                            -- Jika diklik lagi saat hijau -> Batal (Disarm)
+                            setSkillState(kn, false)
                             CurrentSmartKeyData = nil
                             btn.BackgroundColor3 = Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent
                         else
-                            -- JIKA BELUM AKTIF -> AKTIFKAN (Arming)
-                            if CurrentSmartKeyData then -- Reset tombol hijau sebelumnya
+                            -- Siapkan Skill (Arming)
+                            if CurrentSmartKeyData then
+                                setSkillState(CurrentSmartKeyData.KeyName, false)
                                 local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                                 if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
                             end
+                            
+                            if slotIdx then equipWeapon(slotIdx, false) end
+                            setSkillState(kn, true) -- LANGSUNG TAHAN SKILL DI GAME
+                            
                             CurrentSmartKeyData = vData
-                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                            btn.BackgroundColor3 = Theme.Green
+                            btn.TextColor3 = Theme.Bg
                         end
-                        return
                     end
                 end
             end
