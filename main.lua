@@ -757,7 +757,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 50, 0, 50)
         btn.Position = UDim2.new(0.5, 0, 0.5, 0)
-        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- Hitam Default
+        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
         btn.Text = id
         btn.TextColor3 = Theme.Accent
         btn.Font = Enum.Font.GothamBold
@@ -770,11 +770,13 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.ZIndex = 60
         MakeDraggable(btn, nil)
         
-        -- Data tombol (Tanpa KeyCode PC, karena itu di Keybinds table)
+        -- Data tombol
         local vData = {ID=id, Slot=slotIdx, Button=btn, KeyName=keyName}
         
-        local isWeaponKey = table.find({"1","2","3","4"}, keyName)
-        local isSkillKey  = table.find({"Z","X","C","V","F"}, keyName)
+        -- Identifikasi Tipe Tombol (Pastikan string, bukan number)
+        local kn = tostring(keyName) 
+        local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
+        local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
         -- [3] EVENT SAAT TOMBOL DITEKAN (Touch Down)
         btn.InputBegan:Connect(function(input)
@@ -786,19 +788,30 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
 
                 -- B. LOGIKA SENJATA (1-4)
                 if isWeaponKey then
-                    equipWeapon(slotIdx)
+                    equipWeapon(slotIdx) -- Panggil fungsi equip
+                    -- Visual Feedback Singkat
+                    btn.BackgroundColor3 = Theme.Accent
+                    btn.TextColor3 = Color3.new(0,0,0)
+                    task.delay(0.1, function()
+                        btn.BackgroundColor3 = Color3.new(0,0,0)
+                        btn.TextColor3 = Theme.Accent
+                    end)
                     return -- Stop, jangan lanjut ke skill
                 end
                 
                 -- C. LOGIKA SKILL (Z, X, C, V, F)
                 if isSkillKey then
                     if SkillMode == "INSTANT" then
+                        -- 1. Equip Senjata (Internal)
+                        if slotIdx then equipWeapon(slotIdx) end
                         
                         -- 2. Tekan Skill UI
-                        equipWeapon(slotIdx)
                         pressKey(keyName)
                         
-                        -- 3. HOLD M1 (Simulasi Jari Hantu Menahan Layar)
+                        -- 3. Jeda Serang
+                        task.wait(0.03)
+                        
+                        -- 4. HOLD M1 (Simulasi Jari Hantu Menahan Layar)
                         local vp = Camera.ViewportSize
                         VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- 0 = TouchBegin
                         
@@ -807,14 +820,12 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         btn.TextColor3 = Color3.new(0,0,0)
                         
                     elseif SkillMode == "SMART" then
-                        -- Logic Smart Tap (Pilih dulu baru tembak)
                         pressKey(keyName)
-                        
+                        -- Logic Smart Tap (Visual Only)
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
                             local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                             if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
                         end
-                        
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
                             CurrentSmartKeyData = nil
                             btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
@@ -841,7 +852,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 end
                 
                 -- Reset Warna Tombol (Visual)
-                if SkillMode ~= "SMART" then
+                if SkillMode ~= "SMART" and not isWeaponKey then
                     btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                     btn.TextColor3 = Theme.Accent
                 end
