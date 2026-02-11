@@ -1351,27 +1351,75 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
     ShowPopup("CONFIRM RESET?", function(c)
         local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
         local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
         yes.MouseButton1Click:Connect(function()
-            for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end; Combos = {}; 
-            for _, vData in pairs(ActiveVirtualKeys) do vData.Button:Destroy() end; ActiveVirtualKeys = {}; 
-            GlobalTransparency = 0; TKnob.Position=UDim2.new(0, -6, 0.5, -6); 
-            UpdateTransparencyFunc(); IsJoystickEnabled = false; JoyContainer.Visible = false; JoyToggle.Text="JOYSTICK: OFF"; JoyToggle.BackgroundColor3=Theme.Red; 
-            IsLayoutLocked = false; JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0); CurrentComboIndex = 0; CurrentConfigName = nil; SkillMode = "INSTANT"; 
-            if ResizerUpdateFunc then ResizerUpdateFunc() end; updateLockState(); RefreshControlUI(); ShowNotification("Config Reset!", Theme.Accent); ClosePopup()
+            -- 1. LEPASKAN TOMBOL YANG TERSANGKUT (SAFETY)
+            for _, vData in pairs(ActiveVirtualKeys) do
+                VIM:SendKeyEvent(false, vData.Key, false, game) -- Paksa lepas key
+                if vData.Button then vData.Button:Destroy() end
+            end
+            ActiveVirtualKeys = {}
+            
+            -- 2. HAPUS SEMUA COMBO
+            for _, c in pairs(Combos) do 
+                if c.Button then c.Button:Destroy() end 
+            end
+            Combos = {}
+            CurrentComboIndex = 0 -- Reset index agar editor kosong
+            
+            -- 3. RESET VARIABLE SYSTEM
+            Keybinds = {}
+            CurrentConfigName = nil
+            SkillMode = "INSTANT"
+            ModeBtn.Text = "SKILL MODE: INSTANT"
+            ModeBtn.BackgroundColor3 = Theme.Green
+            CurrentSmartKeyData = nil
+            SelectedComboID = nil
+            IsLayoutLocked = false
+            
+            -- 4. RESET VISUAL (TRANSPARANSI & JOYSTICK)
+            GlobalTransparency = 0
+            TKnob.Position = UDim2.new(0, -6, 0.5, -6)
+            IsJoystickEnabled = false
+            JoyContainer.Visible = false
+            JoyToggle.Text = "JOYSTICK: OFF"
+            JoyToggle.BackgroundColor3 = Theme.Red
+            
+            -- 5. KEMBALIKAN POSISI UI KE DEFAULT (FACTORY RESET)
+            Window.Position = UDim2.new(0.5, -300, 0.5, -170)
+            ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
+            JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
+            
+            -- Reset Ukuran Joystick ke Awal
+            local defJoySize = 140
+            JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
+            JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
+            createCorner(JoyOuter, defJoySize)
+
+            -- 6. RESET WARNA TOMBOL PILIHAN DI TAB LAYOUT
+            -- (Agar tombol 1,2,3.. Z,X.. kembali jadi abu-abu/tidak hijau)
+            for k, btn in pairs(VirtualKeySelectors) do
+                btn.BackgroundColor3 = Theme.Element
+                btn.TextColor3 = Theme.Text
+            end
+
+            -- 7. REFRESH SEMUA TAMPILAN
+            UpdateTransparencyFunc()
+            updateLockState()
+            if ResizerUpdateFunc then ResizerUpdateFunc() end
+            RefreshControlUI()
+            
+            -- Refresh Editor agar kembali kosong (Teks "Go to LAYOUT tab...")
+            RefreshEditorUI() 
+
+            ShowNotification("Factory Reset Complete!", Theme.Accent)
+            ClosePopup()
         end)
+        
         no.MouseButton1Click:Connect(ClosePopup)
         return 50
     end)
 end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
-local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
-    ShowPopup("CONFIRM EXIT?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
-        yes.MouseButton1Click:Connect(function() isRunning = false; ScreenGui:Destroy() end)
-        no.MouseButton1Click:Connect(ClosePopup)
-        return 50
-    end)
-end, P_Sys); ExitBtn.Size=UDim2.new(0.9,0,0,45)
 
 -- === STARTUP ===
 ShowNotification("VELOX Loaded.", Theme.Accent)
