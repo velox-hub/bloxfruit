@@ -1,13 +1,15 @@
 -- ==============================================================================
--- [ VELOX LITE V3 - CUSTOM AIM CROSSHAIR ]
--- Feature: Added draggable 'AIM' button.
--- Logic: M1 Button clicks exactly where the 'AIM' button is placed.
+-- [ VELOX LITE V3.1 - CALIBRATED AIM ]
+-- Fix: M1 Tap position is now perfectly aligned with Crosshair '⌖'
+-- Method: Added GuiInset offset compensation.
+-- Features: 1-4 (Toggle), Z-F, M1, Dodge.
 -- ==============================================================================
 
 local Players = game:GetService("Players")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local GuiService = game:GetService("GuiService") -- Service untuk cek TopBar
 
 local LocalPlayer = Players.LocalPlayer
 
@@ -17,7 +19,7 @@ local Theme = {
     Accent = Color3.fromRGB(0, 255, 180),
     Text = Color3.fromRGB(240, 240, 240),
     Red = Color3.fromRGB(255, 80, 80),
-    Aim = Color3.fromRGB(255, 255, 0) -- Kuning untuk Crosshair
+    Aim = Color3.fromRGB(255, 255, 0)
 }
 
 local WeaponData = {
@@ -28,26 +30,32 @@ local WeaponData = {
 -- SETUP GUI
 if CoreGui:FindFirstChild("VeloxLite") then CoreGui.VeloxLite:Destroy() end
 local ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxLite"; ScreenGui.Parent = CoreGui
-ScreenGui.IgnoreGuiInset = true 
+-- Kita MATIKAN IgnoreGuiInset agar visual tombol konsisten dengan area aman layar
+ScreenGui.IgnoreGuiInset = false 
 
--- VARIABLE UNTUK MENYIMPAN TOMBOL AIM
+-- VARIABLE REFERENSI
 local AimButtonRef = nil
 
 -- ==============================================================================
 -- [1] CORE LOGIC
 -- ==============================================================================
 
--- M1 (CLICK AT CROSSHAIR POSITION)
+-- M1 (CALIBRATED TAP)
 local function TapM1()
     if AimButtonRef then
-        -- Ambil posisi tengah dari tombol AIM
+        -- 1. Ambil posisi tombol Visual
         local absPos = AimButtonRef.AbsolutePosition
         local absSize = AimButtonRef.AbsoluteSize
         
-        local x = absPos.X + (absSize.X / 2)
-        local y = absPos.Y + (absSize.Y / 2)
+        -- 2. Ambil ukuran TopBar (Penyebab meleset ke kiri/atas)
+        local topBarOffset = GuiService:GetGuiInset() 
         
-        -- Kirim sentuhan ke posisi tersebut (Touch ID 5)
+        -- 3. Hitung Tengah + Kompensasi Offset
+        -- Kita tambahkan topBarOffset.Y agar klik turun ke bawah sesuai visual
+        local x = absPos.X + (absSize.X / 2)
+        local y = absPos.Y + (absSize.Y / 2) + topBarOffset.Y
+        
+        -- Kirim Sentuhan (ID 5)
         VirtualInputManager:SendTouchEvent(5, 0, x, y)
         task.wait(0.01)
         VirtualInputManager:SendTouchEvent(5, 2, x, y)
@@ -70,7 +78,7 @@ local function ToggleEquip(slot)
     end
 end
 
--- SKILLS & UTILS
+-- UTILS
 local function FireUI(btn)
     if not btn then return end
     for _, c in pairs(getconnections(btn.Activated)) do c:Fire() end
@@ -133,36 +141,44 @@ local function CreateBtn(text, func, size, color, pos, isCrosshair)
     btn.Position = pos
     
     if isCrosshair then
-        -- Desain khusus untuk Crosshair (Transparan tengahnya)
+        -- Desain Target (Crosshair)
         btn.BackgroundColor3 = Theme.Aim
-        btn.BackgroundTransparency = 0.6
+        btn.BackgroundTransparency = 0.5
         btn.TextStrokeTransparency = 0
-        btn.TextColor3 = Color3.new(1,1,1)
+        btn.TextColor3 = Color3.new(0,0,0)
+        btn.Text = "⌖"
+        btn.TextSize = 24
+        
+        -- Garis bidik
+        local h = Instance.new("Frame"); h.Size=UDim2.new(1,0,0,2); h.Position=UDim2.new(0,0,0.5,-1); h.BackgroundColor3=Color3.new(0,0,0); h.BackgroundTransparency=0.5; h.Parent=btn
+        local v = Instance.new("Frame"); v.Size=UDim2.new(0,2,1,0); v.Position=UDim2.new(0.5,-1,0,0); v.BackgroundColor3=Color3.new(0,0,0); v.BackgroundTransparency=0.5; v.Parent=btn
+        
+        -- Simpan Reference
+        AimButtonRef = btn 
     else
         btn.BackgroundColor3 = color
         btn.BackgroundTransparency = 0.2
         btn.TextColor3 = Theme.Text
-    end
-    
-    btn.Text = text
-    btn.Font = Enum.Font.GothamBold
-    btn.TextSize = 14
-    btn.Parent = ScreenGui
-    
-    local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = btn -- Bulat
-    local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Accent; stroke.Thickness = 1.5; stroke.Parent = btn
-    
-    if not isCrosshair then
+        btn.Text = text
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 14
+        
+        local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(0, 8); corner.Parent = btn
+        local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Accent; stroke.Thickness = 1.5; stroke.Parent = btn
+        
         btn.MouseButton1Click:Connect(function()
             btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0); func()
             task.delay(0.1, function() btn.BackgroundColor3 = color; btn.TextColor3 = Theme.Text end)
         end)
-    else
-        -- Crosshair tidak punya fungsi klik, hanya visual
-        stroke.Color = Theme.Aim
-        AimButtonRef = btn -- Simpan referensi ke variable global
     end
     
+    if isCrosshair then
+        -- Crosshair Bulat
+        local corner = Instance.new("UICorner"); corner.CornerRadius = UDim.new(1, 0); corner.Parent = btn
+        local stroke = Instance.new("UIStroke"); stroke.Color = Theme.Aim; stroke.Thickness = 2; stroke.Parent = btn
+    end
+
+    btn.Parent = ScreenGui
     MakeDraggable(btn)
     return btn
 end
@@ -171,24 +187,24 @@ end
 -- [3] LAYOUT
 -- ==============================================================================
 
--- AIM CROSSHAIR (Patokan) - Taruh di tengah layar agak ke kanan sedikit
-CreateBtn("⌖", nil, UDim2.new(0,40,0,40), Theme.Aim, UDim2.new(0.6, 0, 0.3, 0), true)
+-- AIM CROSSHAIR (Patokan)
+CreateBtn("⌖", nil, UDim2.new(0,40,0,40), Theme.Aim, UDim2.new(0.5, -20, 0.4, -20), true)
 
--- Weapons
+-- Weapons (Row 1)
 CreateBtn("1", function() ToggleEquip(1) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.45,0))
 CreateBtn("2", function() ToggleEquip(2) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.73,0,0.45,0))
 CreateBtn("3", function() ToggleEquip(3) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.81,0,0.45,0))
 CreateBtn("4", function() ToggleEquip(4) end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.89,0,0.45,0))
 
--- Skills
+-- Skills (Row 2)
 CreateBtn("Z", function() TriggerSkill("Z") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.65,0,0.55,0))
 CreateBtn("X", function() TriggerSkill("X") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.73,0,0.55,0))
 CreateBtn("C", function() TriggerSkill("C") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.81,0,0.55,0))
 CreateBtn("V", function() TriggerSkill("V") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.69,0,0.65,0))
 CreateBtn("F", function() TriggerSkill("F") end, UDim2.new(0,45,0,45), Theme.Bg, UDim2.new(0.77,0,0.65,0))
 
--- Actions
+-- Actions (Row 3 & Side)
 CreateBtn("M1", TapM1, UDim2.new(0,60,0,60), Theme.Red, UDim2.new(0.9,0,0.25,0))
 CreateBtn("Dodge", TriggerDodge, UDim2.new(0,50,0,50), Theme.Bg, UDim2.new(0.89,0,0.55,0))
 
-print("Velox Lite V3: Custom Aim Loaded")
+print("Velox Lite V3.1: Aim Calibrated")
