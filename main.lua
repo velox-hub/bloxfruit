@@ -225,12 +225,41 @@ end
 
 local function equipWeapon(slotIdx)
     if not slotIdx then return end
-    local s = WeaponData[slotIdx].slot
-    local key = s==1 and Enum.KeyCode.One or s==2 and Enum.KeyCode.Two or s==3 and Enum.KeyCode.Three or Enum.KeyCode.Four
-    VIM:SendKeyEvent(true, key, false, game)
-    task.wait()
-    VIM:SendKeyEvent(false, key, false, game)
-    task.wait(0.05)
+    
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return end
+
+    -- Ambil Tipe Senjata yang dituju (misal: "Melee", "Blox Fruit", "Sword")
+    local targetTip = WeaponData[slotIdx].tooltip
+
+    -- 1. Cek apakah kita sudah memegang senjata itu?
+    local current = char:FindFirstChildOfClass("Tool")
+    if current and current.ToolTip == targetTip then
+        return -- Sudah terpasang, tidak perlu ngapa-ngapain
+    end
+
+    -- 2. Cari senjata tersebut di Backpack (Tas)
+    local foundTool = nil
+    for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
+        if t:IsA("Tool") and t.ToolTip == targetTip then
+            foundTool = t
+            break
+        end
+    end
+
+    -- 3. EKSEKUSI LANGSUNG (Sama cepatnya dengan Remote)
+    if foundTool then
+        hum:EquipTool(foundTool) -- Memaksa karakter memegang alat ini
+    else
+        -- Fallback: Jika tidak ketemu (misal nama beda), baru pakai tombol keyboard
+        local s = WeaponData[slotIdx].slot
+        local key = s==1 and Enum.KeyCode.One or s==2 and Enum.KeyCode.Two or s==3 and Enum.KeyCode.Three or Enum.KeyCode.Four
+        VIM:SendKeyEvent(true, key, false, game)
+        task.wait()
+        VIM:SendKeyEvent(false, key, false, game)
+    end
 end
 
 -- ==============================================================================
@@ -782,30 +811,30 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- [[ PERBAIKAN UTAMA DI SINI ]] --
+                -- [[ PERBAIKAN UTAMA: LOGIKA SENJATA LANGSUNG ]] --
                 if isWeaponKey then
-                    -- 1. Batalkan Skill Smart Tap jika ada yang sedang aktif/hijau
+                    -- 1. Batalkan Skill Smart Tap jika ada (Reset status skill)
                     if CurrentSmartKeyData then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
                         if old then 
-                            old.Button.BackgroundColor3 = Color3.fromRGB(0,0,0) -- Kembalikan skill lama jadi hitam
+                            old.Button.BackgroundColor3 = Color3.fromRGB(0,0,0)
                             old.Button.TextColor3 = Theme.Accent
                         end
-                        CurrentSmartKeyData = nil -- Reset status
+                        CurrentSmartKeyData = nil 
                     end
 
-                    -- 2. Langsung Kirim Sinyal Tekan (INSTANT)
-                    VIM:SendKeyEvent(true, kCode, false, game)
-                    task.wait() -- Delay ultra singkat 1 frame
-                    VIM:SendKeyEvent(false, kCode, false, game)
+                    -- 2. PANGGIL EQUIP LANGSUNG (Bypass Keyboard)
+                    -- Ini akan memanggil fungsi equipWeapon yang baru (Humanoid:EquipTool)
+                    if vData.Slot then 
+                        equipWeapon(vData.Slot) 
+                    end
                     
-                    -- 3. TIDAK ADA PERUBAHAN WARNA (Tetap Hitam)
-                    -- Kode visual dihapus agar terasa cepat
+                    -- Kita TIDAK memanggil VIM:SendKeyEvent di sini agar tidak double input
                     
-                    return -- Berhenti di sini, jangan lanjut ke logika bawah
+                    return -- Berhenti di sini, jangan lanjut ke logic skill
                 end
                 
-                -- LOGIKA UNTUK SKILL (Z, X, C...) JIKA BUKAN SENJATA
+                -- LOGIKA UNTUK SKILL (Z, X, C...)
                 if SkillMode == "INSTANT" then
                     -- Mode Instant Skill: Tekan & Tahan
                     if vData.Slot then equipWeapon(vData.Slot) end
@@ -826,7 +855,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         CurrentSmartKeyData = vData
                         btn.BackgroundColor3 = Theme.Green -- Visual Hijau TANDA READY
                         btn.TextColor3 = Theme.Bg
-                        -- Notifikasi dihapus
                     end
                 end
             end
@@ -836,7 +864,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 -- Hanya berlaku untuk Skill Instant (Z-F). 
-                -- Tombol 1-4 sudah auto-release di atas.
+                -- Tombol 1-4 tidak perlu logic release karena pakai EquipTool.
                 if not isWeaponKey and SkillMode == "INSTANT" then
                     VIM:SendKeyEvent(false, kCode, false, game)
                 end
