@@ -1,14 +1,3 @@
---[[
-    VELOX V135 (FIXED & OPTIMIZED)
-    
-    [ CHANGELOG V135 ]
-    1. SAVE/LOAD SYSTEM: FIXED. Now fully functional (Combos, Layout, Keys).
-    2. CHAT CHECK: Skills won't fire while typing in chat.
-    3. JOYSTICK DEADZONE: Added 15% deadzone to prevent shaking.
-    4. REFACTOR: Cleaned up Combo Button creation for stability.
-    5. SAFETY: Enhanced character checks during combo execution.
-]]
-
 -- ==============================================================================
 -- [1] SERVICES & VARIABLES
 -- ==============================================================================
@@ -42,13 +31,12 @@ local Theme = {
 -- GLOBAL VARIABLES
 local JOYSTICK_SIZE = 140
 local KNOB_SIZE = 60
-local DEADZONE = 0.15 -- 15% Deadzone for Joystick
+local DEADZONE = 0.15 
 
 local isRunning = false 
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
 local IsJoystickEnabled = false 
-local IsMovementPaused = false 
 
 local Combos = {} 
 local CurrentComboIndex = 0 
@@ -58,7 +46,7 @@ local Keybinds = {}
 local VirtualKeySelectors = {}
 
 -- SYSTEM VARS
-local SkillMode = "INSTANT" -- "INSTANT" or "SMART"
+local SkillMode = "INSTANT" 
 local CurrentSmartKeyData = nil 
 local SelectedComboID = nil 
 
@@ -69,7 +57,7 @@ local ResizerUpdateFunc = nil
 local UpdateTransparencyFunc = nil 
 local RefreshEditorUI = nil 
 local RefreshControlUI = nil
-local CreateComboButtonFunc = nil -- Forward declaration
+local CreateComboButtonFunc = nil 
 
 local WeaponData = {
     {name = "Melee", slot = 1, color = Color3.fromRGB(255, 140, 0), tooltip = "Melee", keys = {"Z", "X", "C"}},
@@ -124,7 +112,6 @@ local function MakeDraggable(guiObject, clickCallback)
     end)
 end
 
--- FIX: Chat Check
 local function isChatting()
     local focused = UserInputService:GetFocusedTextBox()
     return focused ~= nil
@@ -134,7 +121,6 @@ end
 -- [3] CORE LOGIC & MANAGERS
 -- ==============================================================================
 
--- Forward Declarations
 local JoyOuter, JoyKnob, JoyDrag, ToggleBtn, JoyContainer, LockBtn, ScreenGui
 
 UpdateTransparencyFunc = function()
@@ -212,12 +198,6 @@ local function ShowNotification(text, color)
 end
 
 -- COMBAT LOGIC
-local function PauseJoystickForAim()
-    -- JOYSTICK PAUSE 0.3s
-    IsMovementPaused = true
-    task.delay(0.3, function() IsMovementPaused = false end)
-end
-
 local function pressKey(k, isHold, holdDur)
     if isHold then
         VIM:SendKeyEvent(true, k, false, game)
@@ -258,7 +238,7 @@ end
 -- ==============================================================================
 
 local function executeComboSequence(idx)
-    if isChatting() then return end -- Chat Check
+    if isChatting() then return end 
 
     local data = Combos[idx]
     if not data or not data.Button then return end
@@ -274,7 +254,6 @@ local function executeComboSequence(idx)
         for i, step in ipairs(data.Steps) do
             if not isRunning then break end
             
-            -- FIX: Safer Character Check
             local char = LocalPlayer.Character
             if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
                 isRunning = false
@@ -303,9 +282,11 @@ local function executeComboSequence(idx)
     end)
 end
 
+local SmartTouchObject = nil 
+
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if isChatting() then return end -- Global Chat Check
-    
+    if isChatting() then return end 
+
     -- PC Keybinds
     if input.UserInputType == Enum.UserInputType.Keyboard and not gameProcessed then
         for action, bindKey in pairs(Keybinds) do
@@ -314,7 +295,6 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     local id = tonumber(string.sub(action, 2))
                     if Combos[id] then
                         if SkillMode == "INSTANT" then 
-                            PauseJoystickForAim()
                             executeComboSequence(id)
                         else 
                             SelectedComboID = id
@@ -326,10 +306,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     local isWeaponKey = table.find({"1","2","3","4"}, vData.Key.Name)
                     
                     if SkillMode == "INSTANT" or isWeaponKey then
-                        if not isWeaponKey then PauseJoystickForAim() end 
                         if vData.Slot then equipWeapon(vData.Slot) end
                         VIM:SendKeyEvent(true, vData.Key, false, game)
-                        task.delay(0.1, function() VIM:SendKeyEvent(false, vData.Key, false, game) end)
                     else 
                         CurrentSmartKeyData = vData
                         ShowNotification("Skill "..action.." Ready", Theme.Green) 
@@ -338,23 +316,50 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
             end
         end
     end
+    
+    -- PC Keybind Release
+    if input.UserInputType == Enum.UserInputType.Keyboard and not gameProcessed then
+        for action, bindKey in pairs(Keybinds) do
+            if input.KeyCode == bindKey and ActiveVirtualKeys[action] then
+                local vData = ActiveVirtualKeys[action]
+                VIM:SendKeyEvent(false, vData.Key, false, game)
+            end
+        end
+    end
 
-    -- Smart Cast (Touch)
+    -- [SMART CAST TOUCH LOGIC]
     if not gameProcessed and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+        
         if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-            PauseJoystickForAim()
+            SmartTouchObject = input 
+            
             task.spawn(function()
-                if CurrentSmartKeyData.Slot and not isWeaponReady(CurrentSmartKeyData.Slot) then equipWeapon(CurrentSmartKeyData.Slot) end
+                if CurrentSmartKeyData.Slot and not isWeaponReady(CurrentSmartKeyData.Slot) then 
+                    equipWeapon(CurrentSmartKeyData.Slot) 
+                end
+                
                 VIM:SendKeyEvent(true, CurrentSmartKeyData.Key, false, game)
-                task.wait(0.05)
-                VIM:SendKeyEvent(false, CurrentSmartKeyData.Key, false, game) 
-                CurrentSmartKeyData = nil -- Reset after fire
             end)
         end
+        
         if SelectedComboID ~= nil and not isRunning then
-            PauseJoystickForAim()
             executeComboSequence(SelectedComboID)
         end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input == SmartTouchObject and SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
+        VIM:SendKeyEvent(false, CurrentSmartKeyData.Key, false, game)
+        
+        if ActiveVirtualKeys[CurrentSmartKeyData.ID] then
+            local btn = ActiveVirtualKeys[CurrentSmartKeyData.ID].Button
+            btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+            btn.TextColor3 = Theme.Accent
+        end
+        
+        CurrentSmartKeyData = nil
+        SmartTouchObject = nil
     end
 end)
 
@@ -363,7 +368,7 @@ end)
 -- ==============================================================================
 
 if CoreGui:FindFirstChild("VeloxUI") then CoreGui.VeloxUI:Destroy() end
-ScreenGui = Instance.new("ScreenGui") -- Global
+ScreenGui = Instance.new("ScreenGui") 
 ScreenGui.Name = "VeloxUI"
 ScreenGui.Parent = CoreGui
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -404,14 +409,14 @@ MakeDraggable(Window, nil)
 
 ToggleBtn.MouseButton1Click:Connect(function() Window.Visible = not Window.Visible end)
 
--- POPUP SYSTEM (ZINDEX FIX)
+-- POPUP SYSTEM
 local PopupOverlay = Instance.new("Frame")
 PopupOverlay.Size = UDim2.new(1, 0, 1, 0)
 PopupOverlay.BackgroundColor3 = Color3.new(0, 0, 0)
 PopupOverlay.BackgroundTransparency = 0.5
 PopupOverlay.Parent = Window
 PopupOverlay.Visible = false
-PopupOverlay.ZIndex = 2000 -- HIGH ZINDEX
+PopupOverlay.ZIndex = 2000 
 
 local function ClosePopup() 
     PopupOverlay.Visible = false 
@@ -428,7 +433,7 @@ local function ShowPopup(title, contentFunc)
     MainP.Position = UDim2.new(0.5, 0, 0.5, 0)
     MainP.BackgroundColor3 = Theme.Popup
     MainP.Parent = PopupOverlay
-    MainP.ZIndex = 2001 -- Higher than Overlay
+    MainP.ZIndex = 2001 
     createCorner(MainP, 10)
     createStroke(MainP, Theme.Accent)
     
@@ -525,7 +530,7 @@ PageTitle.TextXAlignment = "Left"
 PageTitle.BackgroundTransparency = 1
 PageTitle.Parent = Content
 
--- PAGE NAVIGATION FUNCTION
+-- PAGE NAVIGATION
 local Pages = {}
 local function nav(pName, title) 
     for n, p in pairs(Pages) do p.Visible = (n == pName) end 
@@ -562,21 +567,21 @@ local function mkNav(icon, text, target, title)
     return btn
 end
 
--- PAGE CONTAINERS (SCROLLING FIXED - VERTICAL ONLY)
+-- PAGE CONTAINERS
 local P_Guide = Instance.new("Frame"); P_Guide.Size=UDim2.new(1,0,0.85,0); P_Guide.Position=UDim2.new(0,0,0.15,0); P_Guide.BackgroundTransparency=1; P_Guide.Visible=true; P_Guide.Parent=Content; Pages["Guide"]=P_Guide
 local P_Edit = Instance.new("Frame"); P_Edit.Size=UDim2.new(1,0,0.85,0); P_Edit.Position=UDim2.new(0,0,0.15,0); P_Edit.BackgroundTransparency=1; P_Edit.Visible=false; P_Edit.Parent=Content; Pages["Editor"]=P_Edit
 
 local P_Control = Instance.new("ScrollingFrame")
 P_Control.Size=UDim2.new(1,0,0.85,0); P_Control.Position=UDim2.new(0,0,0.15,0); P_Control.BackgroundTransparency=1; P_Control.Visible=false; P_Control.ScrollBarThickness=4; P_Control.Parent=Content; Pages["Control"]=P_Control
-P_Control.ScrollingDirection = Enum.ScrollingDirection.Y -- Fix Horizontal
+P_Control.ScrollingDirection = Enum.ScrollingDirection.Y 
 
 local P_Lay = Instance.new("ScrollingFrame")
 P_Lay.Size=UDim2.new(1,0,0.85,0); P_Lay.Position=UDim2.new(0,0,0.15,0); P_Lay.BackgroundTransparency=1; P_Lay.Visible=false; P_Lay.ScrollBarThickness=4; P_Lay.Parent=Content; Pages["Layout"]=P_Lay
-P_Lay.ScrollingDirection = Enum.ScrollingDirection.Y -- Fix Horizontal
+P_Lay.ScrollingDirection = Enum.ScrollingDirection.Y 
 
 local P_Sys = Instance.new("Frame"); P_Sys.Size=UDim2.new(1,0,0.85,0); P_Sys.Position=UDim2.new(0,0,0.15,0); P_Sys.BackgroundTransparency=1; P_Sys.Visible=false; P_Sys.Parent=Content; Pages["System"]=P_Sys
 
--- NAV ORDER (Guide First)
+-- NAV ORDER
 local NavGuide = mkNav("ℹ️", "GUIDE", "Guide", "GUIDE & INFO")
 NavGuide.TextColor3 = Theme.Accent
 NavGuide.BackgroundColor3 = Theme.Element
@@ -610,14 +615,13 @@ local GText = [[WELCOME TO VELOX V135!
 Use the 'Controls' tab to set PC Keybinds and change Skill Mode.
 
 [ JOYSTICK FIX ]
-Movement pauses briefly (0.3s) when firing skills to prevent aiming at feet.
 Deadzone added to prevent accidental walking.
 
 [ WEAPON KEYS ]
 Keys 1, 2, 3, 4 are always INSTANT (Equip Only).]]
 
 local GLabel = Instance.new("TextLabel")
-GLabel.Size = UDim2.new(0.95, 0, 0, 300) -- Width < 1 to prevent horizontal scroll
+GLabel.Size = UDim2.new(0.95, 0, 0, 300) 
 GLabel.Position = UDim2.new(0.025, 0, 0, 0)
 GLabel.Text = GText
 GLabel.TextColor3 = Theme.Text
@@ -699,9 +703,8 @@ RunService.RenderStepped:Connect(function()
     if not LocalPlayer.Character then return end
     local hum = LocalPlayer.Character:FindFirstChild("Humanoid")
     if not hum then return end
-    if IsMovementPaused then hum:Move(Vector3.new(0,0,0), true); return end 
     
-    -- FIX: Deadzone Check
+    -- Deadzone Check
     if moveDir.Magnitude < DEADZONE then 
         hum:Move(Vector3.new(0,0,0), true)
         return
@@ -751,6 +754,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.TextColor3 = Theme.Accent
         btn.Font = Enum.Font.GothamBold
         btn.TextSize = 20
+        btn.TextScaled = true 
         btn.Parent = ScreenGui
         btn.Selectable = false
         createCorner(btn, 12)
@@ -762,38 +766,59 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         if keyName=="1" then kCode=Enum.KeyCode.One elseif keyName=="2" then kCode=Enum.KeyCode.Two elseif keyName=="3" then kCode=Enum.KeyCode.Three elseif keyName=="4" then kCode=Enum.KeyCode.Four else kCode=Enum.KeyCode[keyName] end
         
         local vData = {ID=id, Key=kCode, Slot=slotIdx, Button=btn}
-        btn.MouseButton1Click:Connect(function()
-            local isWeaponKey = table.find({"1","2","3","4"}, keyName)
-            if SkillMode == "INSTANT" or isWeaponKey then
-                if not isWeaponKey then PauseJoystickForAim() end 
-                if vData.Slot then equipWeapon(vData.Slot) end
-                VIM:SendKeyEvent(true, kCode, false, game)
-                btn.BackgroundColor3=Theme.Accent; btn.TextColor3=Color3.new(0,0,0)
-                task.delay(0.1, function() VIM:SendKeyEvent(false, kCode, false, game); btn.BackgroundColor3=Color3.fromRGB(0,0,0); btn.TextColor3=Theme.Accent end)
-            elseif SkillMode == "SMART" then
-                if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then 
-                    CurrentSmartKeyData = nil; btn.BackgroundColor3=Color3.fromRGB(0,0,0); btn.TextColor3=Theme.Accent
-                else
-                    if CurrentSmartKeyData then 
+        local isWeaponKey = table.find({"1","2","3","4"}, keyName)
+        
+        -- [EVENT SAAT JARI MENYENTUH TOMBOL]
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                
+                -- KASUS 1: TOMBOL SENJATA (1, 2, 3, 4)
+                if isWeaponKey then
+                    VIM:SendKeyEvent(true, kCode, false, game)
+                    task.wait(0.05)
+                    VIM:SendKeyEvent(false, kCode, false, game)
+                    
+                -- KASUS 2: TOMBOL SKILL (Z, X, C...) - MODE INSTANT
+                elseif SkillMode == "INSTANT" then
+                    if vData.Slot then equipWeapon(vData.Slot) end
+                    VIM:SendKeyEvent(true, kCode, false, game)
+                    
+                -- KASUS 3: TOMBOL SKILL - MODE SMART TAP
+                elseif SkillMode == "SMART" then
+                    if CurrentSmartKeyData and CurrentSmartKeyData.ID ~= id then
                         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
-                        if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end 
+                        if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
                     end
-                    CurrentSmartKeyData = vData; btn.BackgroundColor3=Theme.Green; btn.TextColor3=Theme.Bg
-                    if SelectedComboID then 
-                        local cBtn = Combos[SelectedComboID].Button
-                        if cBtn then cBtn.BackgroundColor3=Theme.Sidebar; cBtn.UIStroke.Color=Theme.Accent end
-                        SelectedComboID=nil 
+                    
+                    if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
+                        CurrentSmartKeyData = nil
+                        btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                        btn.TextColor3 = Theme.Accent
+                    else
+                        CurrentSmartKeyData = vData
+                        btn.BackgroundColor3 = Theme.Green
+                        btn.TextColor3 = Theme.Bg
+                        ShowNotification("Skill "..id.." Ready", Theme.Green)
                     end
                 end
             end
         end)
+
+        -- [EVENT SAAT JARI DIANGKAT DARI TOMBOL]
+        btn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if not isWeaponKey and SkillMode == "INSTANT" then
+                    VIM:SendKeyEvent(false, kCode, false, game)
+                end
+            end
+        end)
+
         ActiveVirtualKeys[id] = vData
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Green; VirtualKeySelectors[id].TextColor3=Theme.Bg end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end; if RefreshControlUI then RefreshControlUI() end
     end
 end
 
--- FIX: Extracted function for creating Combo Button (For Save/Load)
 CreateComboButtonFunc = function(idx, loadedSteps)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0, 60, 0, 60)
@@ -811,7 +836,6 @@ CreateComboButtonFunc = function(idx, loadedSteps)
     
     MakeDraggable(btn, function() 
         if SkillMode == "INSTANT" then 
-            PauseJoystickForAim()
             executeComboSequence(idx) 
         else 
             if SelectedComboID==idx then 
@@ -882,20 +906,60 @@ local Grid2 = Instance.new("UIGridLayout"); Grid2.Parent=VKBox; Grid2.CellSize=U
 local keysList = {"1", "2", "3", "4", "Z", "X", "C", "V", "F"}
 for _, k in ipairs(keysList) do
     local btn = Instance.new("TextButton"); btn.Text=k; btn.BackgroundColor3=Theme.Element; btn.TextColor3=Theme.Text; btn.Font=Enum.Font.GothamBold; btn.TextSize=11; btn.Parent=VKBox; btn.Selectable=false; createCorner(btn,4)
-    btn.MouseButton1Click:Connect(function() toggleVirtualKey(k, nil, k) end) -- Add without auto-equip first
+    btn.MouseButton1Click:Connect(function() toggleVirtualKey(k, nil, k) end) 
     VirtualKeySelectors[k] = btn
 end
 
 -- WEAPON V-KEY ADDER
-local AddTitle = Instance.new("TextLabel"); AddTitle.Size=UDim2.new(0.95,0,0,20); AddTitle.Text="WEAPON BIND ADDER"; AddTitle.TextColor3=Theme.Accent; AddTitle.Font=Enum.Font.GothamBold; AddTitle.TextSize=11; AddTitle.BackgroundTransparency=1; AddTitle.LayoutOrder=5; AddTitle.Parent=P_Lay
+local AddTitle = Instance.new("TextLabel"); AddTitle.Size=UDim2.new(0.95,0,0,20); AddTitle.Text="WEAPON SKILL"; AddTitle.TextColor3=Theme.Accent; AddTitle.Font=Enum.Font.GothamBold; AddTitle.TextSize=11; AddTitle.BackgroundTransparency=1; AddTitle.LayoutOrder=5; AddTitle.Parent=P_Lay
 local VKeyAddBox = Instance.new("Frame"); VKeyAddBox.Size=UDim2.new(0.95,0,0,80); VKeyAddBox.BackgroundColor3=Theme.Sidebar; VKeyAddBox.LayoutOrder=6; VKeyAddBox.Parent=P_Lay; createCorner(VKeyAddBox,6)
-local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.45,0,0,30); TypeBtn.Position=UDim2.new(0.03,0,0.1,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6)
-local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.45,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0.1,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6)
-local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(0.94,0,0,30); AddVKeyBtn.Position=UDim2.new(0.03,0,0.55,0); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6)
+
+-- BUTTONS FOR ADDER
+local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.45,0,0,30); TypeBtn.Position=UDim2.new(0.03,0,0.1,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6); TypeBtn.TextScaled = true 
+local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.45,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0.1,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6); KeyBtn.TextScaled = true 
+local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(0.94,0,0,30); AddVKeyBtn.Position=UDim2.new(0.03,0,0.55,0); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6); AddVKeyBtn.TextScaled = true 
+
 local selW, selK = "Melee", "Z"
-TypeBtn.MouseButton1Click:Connect(function() local tList={"Melee", "Fruit", "Sword", "Gun"}; local idx=table.find(tList, selW) or 0; selW=tList[(idx%#tList)+1]; TypeBtn.Text=selW end)
-KeyBtn.MouseButton1Click:Connect(function() local kList={"Z", "X", "C", "V", "F"}; local idx=table.find(kList, selK) or 0; selK=kList[(idx%#kList)+1]; KeyBtn.Text=selK end)
-AddVKeyBtn.MouseButton1Click:Connect(function() local slot=1; for i,v in ipairs(WeaponData) do if v.name==selW then slot=i break end end; local id=selW.." "..selK; toggleVirtualKey(selK, slot, id) end)
+local SkillLimits = { ["Melee"] = {"Z", "X", "C"}, ["Fruit"] = {"Z", "X", "C", "V", "F"}, ["Sword"] = {"Z", "X"}, ["Gun"]   = {"Z", "X"} }
+
+local function UpdateAddButtonState()
+    local id = selW .. " " .. selK
+    if ActiveVirtualKeys[id] then
+        AddVKeyBtn.Text = "DELETE KEY"
+        AddVKeyBtn.BackgroundColor3 = Theme.Red
+    else
+        AddVKeyBtn.Text = "ADD BOUND KEY"
+        AddVKeyBtn.BackgroundColor3 = Theme.Green
+    end
+end
+
+TypeBtn.MouseButton1Click:Connect(function() 
+    local tList={"Melee", "Fruit", "Sword", "Gun"}
+    local idx=table.find(tList, selW) or 0
+    selW=tList[(idx%#tList)+1]
+    TypeBtn.Text=selW 
+    local validKeys = SkillLimits[selW] or {"Z", "X"}
+    if not table.find(validKeys, selK) then selK = validKeys[1] end
+    KeyBtn.Text = selK
+    UpdateAddButtonState()
+end)
+
+KeyBtn.MouseButton1Click:Connect(function() 
+    local kList = SkillLimits[selW] or {"Z", "X"}
+    local idx = table.find(kList, selK) or 0
+    selK = kList[(idx % #kList) + 1]
+    KeyBtn.Text = selK 
+    UpdateAddButtonState()
+end)
+
+AddVKeyBtn.MouseButton1Click:Connect(function() 
+    local slot = 1
+    for i,v in ipairs(WeaponData) do if v.name == selW then slot = i break end end
+    local id = selW .. " " .. selK
+    toggleVirtualKey(selK, slot, id) 
+    UpdateAddButtonState()
+end)
+UpdateAddButtonState()
 
 -- RESIZER & VISIBILITY BUTTON
 local AdvLabel = Instance.new("TextLabel"); AdvLabel.Size=UDim2.new(0.95,0,0,20); AdvLabel.Text="RESIZE BUTTON"; AdvLabel.TextColor3=Theme.Accent; AdvLabel.Font=Enum.Font.GothamBold; AdvLabel.TextSize=11; AdvLabel.BackgroundTransparency=1; AdvLabel.LayoutOrder=7; AdvLabel.Parent=P_Lay
@@ -927,7 +991,6 @@ ResizerUpdateFunc = function()
     SelectBtn.Text = "SELECT: " .. item.Name
     CurrentSelectedElement = item 
     
-    -- SAFETY: Hide Visibility Button for Toggle Button
     if item.Name == "TOGGLE BTN" then
         VisBtn.Visible = false
     else
@@ -1158,7 +1221,7 @@ local function LoadSpecific(configName)
     ShowNotification("Loaded: " .. configName, Theme.Blue)
 end
 
--- === SYSTEM TAB (FIXED SAVE POPUP ZINDEX) ===
+-- === SYSTEM TAB ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
 local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function() 
     if CurrentConfigName then 
@@ -1172,7 +1235,7 @@ local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function()
                     local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c2; createCorner(box,6); box.ZIndex=2004;
                     local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c2; createCorner(confirm,6); confirm.ZIndex=2004;
                     confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); CurrentConfigName=box.Text; ClosePopup() end end); 
-                    return 100 -- Height
+                    return 100 
                 end) 
             end); 
             return 100 
