@@ -342,21 +342,27 @@ local function executeComboSequence(idx)
             task.wait(0.03)
             
             -- [4] Delay Tambahan (Jika diatur di editor)
-            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end                
-            if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                -- Simulasi Tahan M1
-                local vp = Camera.ViewportSize
-                VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- Touch Down
-                task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- Touch Up
-            else
-                -- Jika Mode Tap Biasa
-                TapM1()
-                task.wait(0.03)
-                TapM1()
-                task.wait(0.03)
-                TapM1()
-            end          
+            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end    
+            if SkillMode == "SMART" then 
+                while CurrentSmartKeyData ~= nil and isRunning do
+                    task.wait() -- Cek setiap frame
+                end
+            else        
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    -- Simulasi Tahan M1
+                    local vp = Camera.ViewportSize
+                    VIM:SendTouchEvent(5, 0, vp.X/2, vp.Y/2) -- Touch Down
+                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
+                    VIM:SendTouchEvent(5, 2, vp.X/2, vp.Y/2) -- Touch Up
+                else
+                    -- Jika Mode Tap Biasa
+                    TapM1()
+                    task.wait(0.03)
+                    TapM1()
+                    task.wait(0.03)
+                    TapM1()
+                end    
+            end      
             -- [4] Jeda Antar Langkah
             task.wait(0.2)
         end
@@ -382,16 +388,7 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 
     if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
         
-        -- A. LOGIKA SMART SKILL (SINGLE)
-        -- if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-        --     SmartTouchObject = input
-        --     task.spawn(function()
-        --         if CurrentSmartKeyData.Slot then equipWeapon(CurrentSmartKeyData.Slot, false) end
-        --         pressKey(CurrentSmartKeyData.KeyName)
-        --     end)
-        -- end
-        
-        -- B. LOGIKA COMBO (INSTANT & SMART)
+        -- LOGIKA COMBO (INSTANT & SMART)
         if SelectedComboID ~= nil and not isRunning then
             IsSmartHolding = true -- Tandai jari sedang menempel
             executeComboSequence(SelectedComboID)
@@ -869,26 +866,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         btn.TextColor3 = Color3.new(0,0,0)
                     else
                         pressKey(kn)
-                        
-                        -- 3. Jeda Serang (Agar skill keluar dulu sebelum M1)
-                        task.wait(0.03)  
-                     -- elseif SkillMode == "SMART" then
-                        -- Mode Smart: HANYA PILIH TOMBOL (Jangan eksekusi di sini)
-                        
-                        -- Reset tombol lama jika ganti pilihan
-                        -- if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then-- Pastikan input lepas
-                        --     CurrentSmartKeyData = nil
-                        --     btn.BackgroundColor3 = Color3.fromRGB(0,0,0); btn.TextColor3 = Theme.Accent
-                        -- else
-                        --     pressKey(CurrentSmartKeyData.KeyName)
-                        --     if CurrentSmartKeyData then -- Reset tombol hijau sebelumnya
-                        --         local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
-                        --         if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end
-                        --     end
-                        --     CurrentSmartKeyData = vData
-                        --     btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                        -- end
-                        -- return
                     end
                 end
             end
