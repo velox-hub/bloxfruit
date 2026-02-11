@@ -1,6 +1,6 @@
 -- ==============================================================================
--- [ VELOX V1.4 - DIRECT UI & REMOTE EDITION ]
--- Silent Execution (No Mouse Interference)
+-- [ VELOX V1.5 - WEAPON & REMOTE M1 FIXED ]
+-- Fix: 1-4 Equip, M1 Silent Remote Attack
 -- ==============================================================================
 
 local Players = game:GetService("Players")
@@ -9,13 +9,11 @@ local UserInputService = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser = game:GetService("VirtualUser")
 
-local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local FileName = "Velox_Config.json"
 
--- CONFIGURATION
+-- CONFIGURATION UI
 local Theme = {
     Bg      = Color3.fromRGB(18, 18, 22),
     Sidebar = Color3.fromRGB(26, 26, 32),
@@ -30,299 +28,26 @@ local Theme = {
     Popup   = Color3.fromRGB(25, 25, 30)
 }
 
--- GLOBAL VARIABLES
-local JOYSTICK_SIZE = 140
-local KNOB_SIZE = 60
-local DEADZONE = 0.15 
-
-local isRunning = false 
-local IsLayoutLocked = false 
-local GlobalTransparency = 0 
-local IsJoystickEnabled = false 
-local JoyConnection = nil 
-
-local Combos = {} 
-local CurrentComboIndex = 0 
+-- VARIABLES
 local ActiveVirtualKeys = {} 
-local CurrentConfigName = nil 
-local Keybinds = {} 
-local VirtualKeySelectors = {}
-
--- SYSTEM VARS
-local SkillMode = "INSTANT" 
-local CurrentSmartKeyData = nil 
-local SelectedComboID = nil 
-
--- UI VARIABLES
-local ResizerList = {}
-local CurrentSelectedElement = nil
 local ScreenGui = nil
+local IsLayoutLocked = false
+local M1Loop = nil -- Untuk Auto Click saat ditahan
 
-local ResizerUpdateFunc, UpdateTransparencyFunc, RefreshEditorUI, RefreshControlUI, CreateComboButtonFunc
-
+-- DATA SENJATA (Blox Fruit Standard)
 local WeaponData = {
-    {name = "Melee", slot = 1, color = Color3.fromRGB(255, 140, 0), tooltip = "Melee", keys = {"Z", "X", "C"}},
-    {name = "Fruit", slot = 2, color = Color3.fromRGB(170, 50, 255), tooltip = "Blox Fruit", keys = {"Z", "X", "C", "V", "F"}},
-    {name = "Sword", slot = 3, color = Color3.fromRGB(0, 160, 255), tooltip = "Sword", keys = {"Z", "X"}},
-    {name = "Gun",   slot = 4, color = Color3.fromRGB(255, 220, 0),   tooltip = "Gun", keys = {"Z", "X"}}
+    {name = "Melee", slot = 1, tooltip = "Melee"},
+    {name = "Fruit", slot = 2, tooltip = "Blox Fruit"},
+    {name = "Sword", slot = 3, tooltip = "Sword"},
+    {name = "Gun",   slot = 4, tooltip = "Gun"}
 }
 
 -- ==============================================================================
--- [2] UTILITY & FIRE FUNCTIONS (INTI DARI PERUBAHAN)
+-- [1] UTILITY FUNCTIONS
 -- ==============================================================================
 
 local function createCorner(p, r) local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, r); c.Parent = p end
 local function createStroke(p, c) local s = Instance.new("UIStroke"); s.Color = c or Theme.Stroke; s.Thickness = 1.5; s.ApplyStrokeMode = "Border"; s.Parent = p; return s end
-
--- FUNGSI SAKTI: Klik Tombol UI tanpa Mouse
-local function FireButton(button)
-    if not button then return false end
-    
-    -- Cara 1: Menggunakan VirtualInputManager (Khusus Mobile Button) jika ada
-    -- Cara 2: Menggunakan getconnections (Metode Exploit Standar)
-    local connections = getconnections(button.MouseButton1Click)
-    if #connections > 0 then
-        for _, conn in pairs(connections) do 
-            conn:Fire() 
-        end
-        return true
-    end
-    
-    connections = getconnections(button.Activated)
-    if #connections > 0 then
-        for _, conn in pairs(connections) do 
-            conn:Fire() 
-        end
-        return true
-    end
-
-    -- Cara 3: InputBegan (Fallback)
-    for _, conn in pairs(getconnections(button.InputBegan)) do
-        conn:Fire({UserInputType = Enum.UserInputType.MouseButton1, UserInputState = Enum.UserInputState.Begin})
-    end
-    return true
-end
-
--- MENCARI TOMBOL SKILL DI UI
-local function FindSkillButton(key)
-    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not PGui then return nil end
-    
-    -- Cek Folder Skills Utama
-    local SkillsFrame = PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
-    if SkillsFrame then
-        for _, toolFrame in pairs(SkillsFrame:GetChildren()) do
-            if toolFrame:IsA("Frame") and toolFrame.Visible then
-                -- Kita mencari tombol Z, X, C, V, F di dalam frame senjata yang aktif
-                local keyFrame = toolFrame:FindFirstChild(key)
-                if keyFrame then
-                    -- Cek tombol 'Mobile' di dalamnya (sesuai path user)
-                    -- game.Players.LocalPlayer.PlayerGui.Main.Skills.Saber.Z.Mobile
-                    local btn = keyFrame:FindFirstChild("Mobile") or keyFrame -- Fallback ke frame itu sendiri jika Mobile button ga ada
-                    if btn and btn:IsA("GuiButton") then
-                        return btn
-                    end
-                end
-            end
-        end
-    end
-    
-    -- Cek Context Buttons (Race Skill, Soru, dll)
-    -- game.Players.LocalPlayer.PlayerGui.MobileContextButtons.ContextButtonFrame.BoundActionSoru.Button
-    local ContextFrame = PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
-    if ContextFrame then
-        for _, boundAction in pairs(ContextFrame:GetChildren()) do
-            if boundAction.Name:find("BoundAction") and boundAction:FindFirstChild("Button") then
-                -- Logika mapping khusus
-                if key == "Flash Step" and boundAction.Name:find("Soru") then return boundAction.Button end
-                if key == "Race Skill" and boundAction.Name:find("RaceAbility") then return boundAction.Button end
-                if key == "Ken" and boundAction.Name:find("Ken") then return boundAction.Button end
-            end
-        end
-    end
-    
-    return nil
-end
-
--- EKSEKUSI SKILL (UI -> REMOTE)
-local function TriggerAction(key)
-    -- 1. Coba Cari Tombol UI dan Klik
-    local btn = FindSkillButton(key)
-    if btn then
-        FireButton(btn)
-        return -- Sukses via UI
-    end
-
-    -- 2. Handling Khusus (Remote Direct) jika UI tidak ketemu
-    if key == "M1" then
-        -- Auto Click / Attack
-        -- Gunakan Remote Attack yang diberikan user
-        local tool = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Tool")
-        if tool then
-            if tool.ToolTip == "Melee" or tool.ToolTip == "Sword" then
-                -- 0.4 untuk Melee/Sword biasanya aman
-                ReplicatedStorage.Modules.Net["RE/RegisterAttack"]:FireServer(0.4)
-            elseif tool.ToolTip == "Gun" then
-                -- Gun butuh aiming, ini agak tricky kalau tanpa mouse.
-                -- Kita skip aim dan hanya fire validator
-                -- ReplicatedStorage.Remotes.Validator2:FireServer(math.random(1000000), 9) -- Warning: Risky
-            else
-                 -- Fallback: Activate Tool (Paling aman untuk M1)
-                 tool:Activate()
-            end
-        end
-    elseif key == "Buso" then
-        ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
-    elseif key == "Geppo" or key == "Jump" then
-         -- Double Jump Remote
-        ReplicatedStorage.Remotes.CommE:FireServer("DoubleJump", false)
-    elseif key == "Dodge" then
-         -- Dash Remote
-         ReplicatedStorage.Remotes.CommE:FireServer("Dodge", 30, true, 1) -- Args mungkin berubah, hati-hati
-    end
-end
-
--- EQUIP WEAPON (Direct Humanoid)
-local function equipWeapon(slotIdx)
-    if not slotIdx then return end
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChild("Humanoid")
-    if not hum then return end
-
-    local targetTip = WeaponData[slotIdx].tooltip
-    local current = char:FindFirstChildOfClass("Tool")
-    if current and current.ToolTip == targetTip then return end
-
-    local foundTool = nil
-    for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
-        if t:IsA("Tool") and t.ToolTip == targetTip then
-            foundTool = t
-            break
-        end
-    end
-
-    if foundTool then
-        hum:EquipTool(foundTool) -- SILENT EQUIP
-    end
-end
-
--- ==============================================================================
--- [3] CORE LOGIC & MANAGERS
--- ==============================================================================
-
--- [SAMA SEPERTI SEBELUMNYA TAPI MENGGUNAKAN TriggerAction BUKAN pressKey]
-local function executeComboSequence(idx)
-    if not Combos[idx] then return end
-    if isRunning then return end
-
-    isRunning = true
-    local data = Combos[idx]
-    local btn = data.Button
-    
-    -- Visual Indicator
-    btn.Text = "STOP"
-    btn.BackgroundColor3 = Theme.Red
-    
-    task.spawn(function()
-        for i, step in ipairs(data.Steps) do
-            if not isRunning then break end
-            
-            local char = LocalPlayer.Character
-            if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then isRunning = false; break end
-            
-            -- Equip Weapon
-            if step.Slot then equipWeapon(step.Slot); task.wait(0.15) end
-            
-            -- Delay Step
-            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end
-            
-            -- EXECUTE SKILL
-            TriggerAction(step.Key)
-            
-            -- Hold logic (untuk UI agak susah disimulasi hold, jadi kita spam delay)
-            if step.IsHold then
-                task.wait(step.HoldTime or 0.1)
-                -- Release logic biasanya tidak perlu untuk Click event, kecuali toolnya charged
-            else
-                task.wait(0.2) 
-            end
-        end
-        
-        isRunning = false
-        if btn then btn.Text = data.Name; btn.BackgroundColor3 = (SelectedComboID == idx) and Theme.Green or Theme.Sidebar end
-    end)
-end
-
--- ==============================================================================
--- [4] INPUT HANDLERS (UPDATED)
--- ==============================================================================
-local SmartTouchObject = nil 
-
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-    if UserInputService:GetFocusedTextBox() then return end
-
-    -- PC Keybinds
-    if input.UserInputType == Enum.UserInputType.Keyboard and not gameProcessed then
-        for action, bindKey in pairs(Keybinds) do
-            if input.KeyCode == bindKey then
-                if string.sub(action, 1, 1) == "C" then 
-                    local id = tonumber(string.sub(action, 2))
-                    if Combos[id] then
-                        if SkillMode == "INSTANT" then executeComboSequence(id)
-                        else SelectedComboID = id; end
-                    end
-                elseif ActiveVirtualKeys[action] then 
-                    local vData = ActiveVirtualKeys[action]
-                    local isWeaponKey = table.find({"1","2","3","4"}, vData.Key.Name)
-                    
-                    if SkillMode == "INSTANT" or isWeaponKey then
-                        if vData.Slot then equipWeapon(vData.Slot) end
-                        TriggerAction(vData.Key.Name) -- GANTI VIM DENGAN TRIGGER ACTION
-                    else 
-                        CurrentSmartKeyData = vData
-                    end
-                end
-            end
-        end
-    end
-    
-    -- SMART TOUCH LOGIC (Klik Layar)
-    if not gameProcessed and (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
-        
-        -- Smart Skill Logic
-        if SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-            SmartTouchObject = input 
-            task.spawn(function()
-                if CurrentSmartKeyData.Slot then equipWeapon(CurrentSmartKeyData.Slot); task.wait(0.05) end
-                TriggerAction(CurrentSmartKeyData.Key.Name) -- GANTI VIM
-            end)
-        end
-        
-        -- Smart Combo Logic
-        if SelectedComboID ~= nil and not isRunning then
-            executeComboSequence(SelectedComboID)
-        end
-    end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input == SmartTouchObject and SkillMode == "SMART" and CurrentSmartKeyData ~= nil then
-        -- Reset visual state
-        if ActiveVirtualKeys[CurrentSmartKeyData.ID] then
-            local btn = ActiveVirtualKeys[CurrentSmartKeyData.ID].Button
-            btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
-            btn.TextColor3 = Theme.Accent
-        end
-        CurrentSmartKeyData = nil
-        SmartTouchObject = nil
-    end
-end)
-
--- ==============================================================================
--- [5] UI CONSTRUCTION (SAMA SEPERTI SEBELUMNYA)
--- ==============================================================================
--- ... (Kode UI tetap sama karena sudah bagus, saya hanya menyertakan bagian yang perlu load)
 
 local function MakeDraggable(guiObject, clickCallback)
     local dragging, dragInput, dragStart, startPos
@@ -351,63 +76,229 @@ local function MakeDraggable(guiObject, clickCallback)
     end)
 end
 
--- SETUP UI CONTAINER
-if CoreGui:FindFirstChild("VeloxUI") then CoreGui.VeloxUI:Destroy() end
-ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxUI"; ScreenGui.Parent = CoreGui; ScreenGui.ResetOnSpawn = false
+-- ==============================================================================
+-- [2] LOGIKA INTI (CORE LOGIC)
+-- ==============================================================================
 
--- (Bagian UI Construction dipersingkat agar muat, gunakan UI yang sama dari script sebelumnya)
--- TOGGLE & WINDOW
-local ToggleBtn = Instance.new("TextButton"); ToggleBtn.Size = UDim2.new(0, 45, 0, 45); ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0); ToggleBtn.BackgroundColor3 = Theme.Sidebar; ToggleBtn.Text = "V"; ToggleBtn.TextColor3 = Theme.Accent; ToggleBtn.Parent = ScreenGui; createCorner(ToggleBtn, 12); createStroke(ToggleBtn, Theme.Accent); MakeDraggable(ToggleBtn, function() end)
+-- FUNGSI: MENCARI TOMBOL SKILL DI LAYAR (UI CLICK)
+local function TriggerUISkill(key)
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not PGui then return end
 
--- FUNGSI MANAGER (ADD/REMOVE BUTTONS)
-local function toggleVirtualKey(keyName, slotIdx, customName)
-    local id = customName or keyName
-    if ActiveVirtualKeys[id] then 
-        ActiveVirtualKeys[id].Button:Destroy(); ActiveVirtualKeys[id]=nil
+    -- Cari di folder Main Skills (Z, X, C, V, F)
+    local SkillsFrame = PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
+    if SkillsFrame then
+        for _, toolFrame in pairs(SkillsFrame:GetChildren()) do
+            if toolFrame:IsA("Frame") and toolFrame.Visible then
+                local keyFrame = toolFrame:FindFirstChild(key)
+                if keyFrame then
+                    -- Prioritas: Tombol Mobile > Frame itu sendiri
+                    local btn = keyFrame:FindFirstChild("Mobile") or keyFrame
+                    if btn then
+                        -- Firing Signal (Klik tanpa mouse)
+                        for _, conn in pairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end
+                        for _, conn in pairs(getconnections(btn.Activated)) do conn:Fire() end
+                        for _, conn in pairs(getconnections(btn.InputBegan)) do 
+                            conn:Fire({UserInputType = Enum.UserInputType.MouseButton1, UserInputState = Enum.UserInputState.Begin})
+                        end
+                        return true
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- FUNGSI: EQUIP SENJATA (1-4)
+local function EquipWeapon(slotIdx)
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChild("Humanoid")
+    if not hum then return end
+
+    -- Ambil Tooltip target (Melee/Fruit/Sword/Gun)
+    local targetTip = WeaponData[slotIdx].tooltip
+    
+    -- Cek backpack
+    for _, t in pairs(LocalPlayer.Backpack:GetChildren()) do
+        if t:IsA("Tool") and t.ToolTip == targetTip then
+            hum:EquipTool(t) -- Paksa Equip
+            return
+        end
+    end
+    
+    -- Jika di backpack gak ketemu (mungkin karena nama beda/inventory penuh), coba cari berdasarkan urutan
+    -- Fallback simple
+    local hotbar = LocalPlayer.Backpack:GetChildren()
+    if hotbar[slotIdx] then
+        hum:EquipTool(hotbar[slotIdx])
+    end
+end
+
+-- FUNGSI: SERANGAN M1 (REMOTE EVENT)
+local function DoAttackM1()
+    local char = LocalPlayer.Character
+    if not char then return end
+    
+    local tool = char:FindFirstChildOfClass("Tool")
+    
+    if tool then
+        -- Cek Tipe Senjata
+        if tool.ToolTip == "Melee" or tool.ToolTip == "Sword" then
+            -- MENGGUNAKAN REMOTE REGISTER ATTACK (Silent)
+            local net = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net")
+            local remote = net and net:FindFirstChild("RE/RegisterAttack")
+            if remote then
+                remote:FireServer(0.4) -- Cooldown standar 0.4s
+            end
+        elseif tool.ToolTip == "Gun" then
+            -- Gun agak susah remote tanpa aim, jadi kita pakai Activate()
+            tool:Activate() 
+        else
+            -- Blox Fruit M1 (biasanya Tap)
+            tool:Activate()
+            -- Coba remote attack juga siapa tau work (misal Light Fruit spear)
+            local net = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net")
+            local remote = net and net:FindFirstChild("RE/RegisterAttack")
+            if remote then remote:FireServer(0.4) end
+        end
     else
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 50, 0, 50); btn.Position = UDim2.new(0.5, 0, 0.5, 0); btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); btn.Text = id; btn.TextColor3 = Theme.Accent; btn.Parent = ScreenGui; createCorner(btn, 12); createStroke(btn, Theme.Accent)
-        
-        local vData = {ID=id, Key={Name=keyName}, Slot=slotIdx, Button=btn} -- Key skrg hanya perlu Name untuk TriggerAction
-        
-        btn.MouseButton1Click:Connect(function()
-             -- LOGIKA KLIK TOMBOL VIRTUAL
-             if SkillMode == "INSTANT" then
-                 if vData.Slot then equipWeapon(vData.Slot) end
-                 TriggerAction(keyName) -- Direct UI Trigger
-             else
-                 -- Smart Logic
-                 if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
-                    CurrentSmartKeyData = nil; btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
-                 else
-                    CurrentSmartKeyData = vData; btn.BackgroundColor3 = Theme.Green
-                 end
-             end
-        end)
-        MakeDraggable(btn, nil)
-        ActiveVirtualKeys[id] = vData
+        -- Jika tidak pegang tool (Combat kosong), tetap kirim remote attack
+        local net = ReplicatedStorage:FindFirstChild("Modules") and ReplicatedStorage.Modules:FindFirstChild("Net")
+        local remote = net and net:FindFirstChild("RE/RegisterAttack")
+        if remote then remote:FireServer(0.4) end
+    end
+end
+
+-- FUNGSI: TOMBOL KHUSUS (HAKI, FLASH STEP, DLL)
+local function TriggerSpecial(key)
+    if key == "Buso" then
+        ReplicatedStorage.Remotes.CommF_:InvokeServer("Buso")
+    elseif key == "Geppo" then
+        ReplicatedStorage.Remotes.CommE:FireServer("DoubleJump", false)
+    elseif key == "Soru" then
+        -- Soru butuh posisi mouse, agak rumit, kita pakai UI Button-nya saja
+        local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+        local ContextFrame = PGui and PGui:FindFirstChild("MobileContextButtons") and PGui.MobileContextButtons:FindFirstChild("ContextButtonFrame")
+        if ContextFrame then
+            for _, frame in pairs(ContextFrame:GetChildren()) do
+                if frame.Name:find("Soru") and frame:FindFirstChild("Button") then
+                    for _, conn in pairs(getconnections(frame.Button.Activated)) do conn:Fire() end
+                    return
+                end
+            end
+        end
     end
 end
 
 -- ==============================================================================
--- [6] INISIALISASI SEDERHANA (Agar Script Langsung Jalan)
+-- [3] UI CONSTRUCTION & BUTTON MANAGER
 -- ==============================================================================
 
--- Load Default 4 Weapon Keys
-toggleVirtualKey("Z", 1, "Z")
-toggleVirtualKey("X", 1, "X")
-toggleVirtualKey("C", 1, "C")
+if CoreGui:FindFirstChild("VeloxUI") then CoreGui.VeloxUI:Destroy() end
+ScreenGui = Instance.new("ScreenGui"); ScreenGui.Name = "VeloxUI"; ScreenGui.Parent = CoreGui; ScreenGui.ResetOnSpawn = false
 
--- Tambahkan Tombol Khusus berdasarkan request Remote Anda
--- Anda bisa menambahkan tombol custom seperti ini:
-local function AddCustomButton(name, callback)
+-- TOGGLE BUTTON
+local ToggleBtn = Instance.new("TextButton")
+ToggleBtn.Size = UDim2.new(0, 45, 0, 45); ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0); ToggleBtn.BackgroundColor3 = Theme.Sidebar; ToggleBtn.Text = "V"; ToggleBtn.TextColor3 = Theme.Accent; ToggleBtn.Parent = ScreenGui
+createCorner(ToggleBtn, 12); createStroke(ToggleBtn, Theme.Accent)
+local WindowVisible = true
+ToggleBtn.MouseButton1Click:Connect(function() 
+    WindowVisible = not WindowVisible
+    for _, v in pairs(ActiveVirtualKeys) do v.Button.Visible = WindowVisible end
+end)
+MakeDraggable(ToggleBtn, nil)
+
+-- FUNGSI PEMBUAT TOMBOL VIRTUAL
+local function AddVirtualButton(id, customText, callback, isHold)
+    if ActiveVirtualKeys[id] then ActiveVirtualKeys[id].Button:Destroy() end
+    
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0, 50, 0, 50); btn.Position = UDim2.new(0.5, 60, 0.5, 0); btn.BackgroundColor3 = Theme.Sidebar; btn.Text = name; btn.TextColor3 = Theme.Text; btn.Parent = ScreenGui; createCorner(btn, 12); createStroke(btn, Theme.Blue)
-    btn.MouseButton1Click:Connect(callback)
+    btn.Size = UDim2.new(0, 50, 0, 50)
+    btn.Position = UDim2.new(0.5, 0, 0.5, 0) -- Default tengah
+    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    btn.BackgroundTransparency = 0.2
+    btn.Text = customText or id
+    btn.TextColor3 = Theme.Accent
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 18
+    btn.Parent = ScreenGui
+    createCorner(btn, 12)
+    createStroke(btn, Theme.Accent)
+    
+    -- LOGIKA KLIK / TAHAN
+    if isHold then
+        -- Khusus M1: Auto Spam saat ditahan
+        btn.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                btn.BackgroundColor3 = Theme.Green
+                btn.TextColor3 = Theme.Bg
+                -- Mulai Loop Attack
+                if M1Loop then M1Loop:Disconnect() end
+                M1Loop = RunService.Heartbeat:Connect(function()
+                    callback() -- Jalankan fungsi M1
+                end)
+            end
+        end)
+        btn.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+                btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                btn.TextColor3 = Theme.Accent
+                if M1Loop then M1Loop:Disconnect(); M1Loop = nil end
+            end
+        end)
+    else
+        -- Tombol Biasa (Sekali Klik)
+        btn.MouseButton1Click:Connect(function()
+            btn.BackgroundColor3 = Theme.Green
+            btn.TextColor3 = Theme.Bg
+            callback()
+            task.delay(0.1, function()
+                btn.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                btn.TextColor3 = Theme.Accent
+            end)
+        end)
+    end
+    
     MakeDraggable(btn, nil)
+    ActiveVirtualKeys[id] = {Button = btn}
+    return btn
 end
 
-AddCustomButton("HAKI", function() TriggerAction("Buso") end)
-AddCustomButton("M1", function() TriggerAction("M1") end)
+-- ==============================================================================
+-- [4] SETUP TOMBOL (DEFAULT)
+-- ==============================================================================
 
-print("Velox Silent UI Loaded")
+-- 1. TOMBOL EQUIP (1, 2, 3, 4)
+AddVirtualButton("1", "1", function() EquipWeapon(1) end, false).Position = UDim2.new(0.75, 0, 0.5, -60)
+AddVirtualButton("2", "2", function() EquipWeapon(2) end, false).Position = UDim2.new(0.85, 0, 0.5, -60)
+AddVirtualButton("3", "3", function() EquipWeapon(3) end, false).Position = UDim2.new(0.75, 0, 0.5, 0)
+AddVirtualButton("4", "4", function() EquipWeapon(4) end, false).Position = UDim2.new(0.85, 0, 0.5, 0)
+
+-- 2. TOMBOL SKILL (Z, X, C, V, F)
+AddVirtualButton("Z", "Z", function() TriggerUISkill("Z") end, false).Position = UDim2.new(0.75, 0, 0.65, 0)
+AddVirtualButton("X", "X", function() TriggerUISkill("X") end, false).Position = UDim2.new(0.85, 0, 0.65, 0)
+AddVirtualButton("C", "C", function() TriggerUISkill("C") end, false).Position = UDim2.new(0.95, 0, 0.65, 0)
+AddVirtualButton("V", "V", function() TriggerUISkill("V") end, false).Position = UDim2.new(0.80, 0, 0.75, 0)
+AddVirtualButton("F", "F", function() TriggerUISkill("F") end, false).Position = UDim2.new(0.90, 0, 0.75, 0)
+
+-- 3. TOMBOL M1 (ATTACK) - SPECIAL REMOTE
+-- Parameter terakhir 'true' artinya Mode Tahan (Hold) aktif
+local btnM1 = AddVirtualButton("M1", "ATK", function() DoAttackM1() end, true)
+btnM1.Position = UDim2.new(0.85, 0, 0.4, 0) -- Posisi agak di atas
+btnM1.Size = UDim2.new(0, 70, 0, 70) -- Lebih besar
+btnM1.BackgroundColor3 = Theme.Red
+btnM1.BackgroundTransparency = 0.3
+
+-- 4. TOMBOL TAMBAHAN (HAKI)
+AddVirtualButton("Buso", "HAKI", function() TriggerSpecial("Buso") end, false).Position = UDim2.new(0.65, 0, 0.5, 0)
+
+print("Velox v1.5 Loaded - Weapon & Remote M1 Ready")
+
+-- Notifikasi Sederhana
+local StarterGui = game:GetService("StarterGui")
+StarterGui:SetCore("SendNotification", {
+    Title = "Velox Updated";
+    Text = "1-4 (Equip) & M1 (Remote) Added!";
+    Duration = 5;
+})
