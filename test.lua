@@ -1397,6 +1397,302 @@ local function SaveToFile(configName, data)
     ShowNotification("Saved: " .. configName, Theme.Green)
 end
 
+-- ==============================================================================
+-- TAB SETTINGS & CALIBRATION (REFINED LAYOUT)
+-- ==============================================================================
+
+-- Padding & List Layout
+local SetPad = Instance.new("UIPadding"); SetPad.Parent=P_Set; SetPad.PaddingLeft=UDim.new(0,10); SetPad.PaddingRight=UDim.new(0,10); SetPad.PaddingTop=UDim.new(0,10); SetPad.PaddingBottom=UDim.new(0,20)
+local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,12); SetList.HorizontalAlignment="Center"; SetList.SortOrder="LayoutOrder"
+
+-- [HELPER] Section Title
+local function mkSetSection(title, order)
+    local l = Instance.new("TextLabel")
+    l.Size = UDim2.new(1, 0, 0, 18)
+    l.Text = title
+    l.TextColor3 = Theme.SubText
+    l.Font = Enum.Font.GothamBold
+    l.TextSize = 10
+    l.TextXAlignment = "Left"
+    l.BackgroundTransparency = 1
+    l.LayoutOrder = order
+    l.Parent = P_Set
+    return l
+end
+
+-- [[ 1. LOGIC CROSSHAIR M1 (RED) ]]
+if CrosshairUI then CrosshairUI:Destroy() end 
+CrosshairUI = Instance.new("ImageButton"); CrosshairUI.Name = "M1_Crosshair"; CrosshairUI.Size = UDim2.new(0, 50, 0, 50); CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5); CrosshairUI.BackgroundTransparency = 1; CrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"; CrosshairUI.ImageColor3 = Theme.Red; CrosshairUI.Parent = ScreenGui; CrosshairUI.Visible = false; CrosshairUI.ZIndex = 9999
+local CH_V = Instance.new("Frame"); CH_V.Size=UDim2.new(0,2,1,0); CH_V.Position=UDim2.new(0.5,-1,0,0); CH_V.BackgroundColor3=Theme.Red; CH_V.Parent=CrosshairUI; CH_V.BorderSizePixel=0
+local CH_H = Instance.new("Frame"); CH_H.Size=UDim2.new(1,0,0,2); CH_H.Position=UDim2.new(0,0,0.5,-1); CH_H.BackgroundColor3=Theme.Red; CH_H.Parent=CrosshairUI; CH_H.BorderSizePixel=0
+
+local draggingCH, dragInputCH
+CrosshairUI.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingCH = true; CrosshairUI.ImageColor3 = Theme.Green; CH_V.BackgroundColor3 = Theme.Green; CH_H.BackgroundColor3 = Theme.Green
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingCH = false; CrosshairUI.ImageColor3 = Theme.Red; CH_V.BackgroundColor3 = Theme.Red; CH_H.BackgroundColor3 = Theme.Red
+                pcall(function() if CalibBtn then CalibBtn.Text = "FINISH" end end)
+            end
+        end)
+    end
+end)
+CrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputCH = input end end)
+TrackConn(UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputCH and draggingCH then
+        local vp = Camera.ViewportSize; M1_Offset = Vector2.new(input.Position.X - (vp.X / 2), input.Position.Y - (vp.Y / 2)); UpdateCrosshairToVIM()
+    end
+end))
+TrackConn(Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function() UpdateCrosshairToVIM() end))
+
+-- [[ 2. LOGIC CROSSHAIR JUMP (BLUE) ]]
+if JumpCrosshairUI then JumpCrosshairUI:Destroy() end 
+JumpCrosshairUI = Instance.new("ImageButton")
+JumpCrosshairUI.Name = "Jump_Crosshair"
+JumpCrosshairUI.Size = UDim2.new(0, 60, 0, 60)
+JumpCrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5)
+JumpCrosshairUI.BackgroundTransparency = 1
+JumpCrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"
+JumpCrosshairUI.ImageColor3 = Theme.Blue 
+JumpCrosshairUI.Parent = ScreenGui
+JumpCrosshairUI.Visible = false
+JumpCrosshairUI.ZIndex = 9999
+
+local function UpdateJumpVisual()
+    if not JumpCrosshairUI.Visible then return end
+    local jBtn = GetJumpButton()
+    if jBtn then
+        local absPos = jBtn.AbsolutePosition
+        local absSize = jBtn.AbsoluteSize
+        local targetX = absPos.X + (absSize.X / 2) + Jump_Offset.X
+        local targetY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
+        JumpCrosshairUI.Position = UDim2.new(0, targetX, 0, targetY)
+    end
+end
+TrackConn(RunService.RenderStepped:Connect(UpdateJumpVisual))
+
+local draggingJump, dragInputJump
+JumpCrosshairUI.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingJump = true
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then draggingJump = false end end)
+    end
+end)
+JumpCrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputJump = input end end)
+TrackConn(UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputJump and draggingJump then
+        local jBtn = GetJumpButton()
+        if jBtn then
+            local absPos = jBtn.AbsolutePosition
+            local absSize = jBtn.AbsoluteSize
+            local defaultCenterX = absPos.X + (absSize.X / 2)
+            local defaultCenterY = absPos.Y + (absSize.Y / 2)
+            Jump_Offset = Vector2.new(input.Position.X - defaultCenterX, input.Position.Y - defaultCenterY)
+            UpdateJumpVisual()
+        end
+    end
+end))
+
+-- [[ 3. CALIBRATION UI (GRID LAYOUT) ]]
+mkSetSection("TOUCH CALIBRATION", 1)
+
+local CalibBox = Instance.new("Frame")
+CalibBox.Size = UDim2.new(1, 0, 0, 40)
+CalibBox.BackgroundTransparency = 1
+CalibBox.LayoutOrder = 2
+CalibBox.Parent = P_Set
+
+local CalibGrid = Instance.new("UIGridLayout")
+CalibGrid.Parent = CalibBox
+CalibGrid.CellSize = UDim2.new(0.48, 0, 1, 0)
+CalibGrid.CellPadding = UDim2.new(0.04, 0, 0, 0)
+
+-- M1 Calibration Button
+local CalibBtn = mkTool("CALIBRATE M1", Theme.Element, nil, CalibBox)
+CalibBtn.MouseButton1Click:Connect(function()
+    local isVisible = not CrosshairUI.Visible; CrosshairUI.Visible = isVisible
+    if isVisible then 
+        UpdateCrosshairToVIM(); CalibBtn.BackgroundColor3 = Theme.Red; CalibBtn.TextColor3 = Theme.Bg; CalibBtn.Text = "FINISH"
+        ShowNotification("Drag RED Crosshair to Aim Point", Theme.Accent)
+    else 
+        CalibBtn.Text = "CALIBRATE M1"; CalibBtn.BackgroundColor3 = Theme.Element; CalibBtn.TextColor3 = Theme.Text; ShowNotification("M1 Position Saved!", Theme.Green) 
+    end
+end)
+
+-- Jump Calibration Button
+local CalibJumpBtn = mkTool("CALIBRATE JUMP", Theme.Element, nil, CalibBox)
+CalibJumpBtn.MouseButton1Click:Connect(function()
+    local isVisible = not JumpCrosshairUI.Visible; JumpCrosshairUI.Visible = isVisible
+    if isVisible then 
+        CalibJumpBtn.BackgroundColor3 = Theme.Blue; CalibJumpBtn.TextColor3 = Theme.Bg; CalibJumpBtn.Text = "FINISH"
+        ShowNotification("Drag BLUE Target to Adjust Jump", Theme.Blue)
+        UpdateJumpVisual()
+    else 
+        CalibJumpBtn.Text = "CALIBRATE JUMP"; CalibJumpBtn.BackgroundColor3 = Theme.Element; CalibJumpBtn.TextColor3 = Theme.Text; ShowNotification("Jump Position Saved!", Theme.Green) 
+    end
+end)
+
+local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(1, 0, 0, 15); InfoLbl.Text = "RED = M1 Aim  |  BLUE = Jump Position"; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 10; InfoLbl.LayoutOrder = 3; InfoLbl.Parent = P_Set
+
+-- [[ 4. SKILL EXECUTION MODE ]]
+mkSetSection("SKILL EXECUTION MODE", 4)
+local ModeContainer = Instance.new("Frame"); ModeContainer.Size = UDim2.new(1, 0, 0, 35); ModeContainer.BackgroundTransparency = 1; ModeContainer.LayoutOrder = 5; ModeContainer.Parent = P_Set
+ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
+    if SkillMode == "INSTANT" then 
+        SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
+    else 
+        SkillMode = "INSTANT"; ModeBtn.Text = "MODE: INSTANT"; ModeBtn.BackgroundColor3 = Theme.Green; CurrentSmartKeyData=nil; SelectedComboID=nil 
+    end 
+end, ModeContainer)
+ModeBtn.Size = UDim2.new(1, 0, 1, 0)
+
+-- [[ 5. AUTO BUTTON SETTINGS ]]
+mkSetSection("AUTO BUTTON SETTINGS", 6)
+local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 115); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 7; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
+local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,10); AutoPad.PaddingLeft=UDim.new(0,10); AutoPad.PaddingRight=UDim.new(0,10); AutoPad.PaddingBottom=UDim.new(0,10)
+local AutoList = Instance.new("UIListLayout"); AutoList.Parent=AutoBox; AutoList.Padding=UDim.new(0,8); AutoList.SortOrder="LayoutOrder"
+
+SetM1Btn = mkTool("AUTO M1: HOLD MODE", Theme.Element, function()
+    if Settings_Mode_M1 == "HOLD" then Settings_Mode_M1 = "TOGGLE"; SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"; SetM1Btn.BackgroundColor3 = Theme.Blue; SetM1Btn.TextColor3 = Theme.Bg
+    else Settings_Mode_M1 = "HOLD"; SetM1Btn.Text = "AUTO M1: HOLD MODE"; SetM1Btn.BackgroundColor3 = Theme.Element; SetM1Btn.TextColor3 = Theme.SubText; IsAutoM1_Active = false end
+end, AutoBox)
+SetM1Btn.Size = UDim2.new(1, 0, 0, 28)
+
+SetDashBtn = mkTool("AUTO DASH: HOLD MODE", Theme.Element, function()
+    if Settings_Mode_Dash == "HOLD" then Settings_Mode_Dash = "TOGGLE"; SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"; SetDashBtn.BackgroundColor3 = Theme.Blue; SetDashBtn.TextColor3 = Theme.Bg
+    else Settings_Mode_Dash = "HOLD"; SetDashBtn.Text = "AUTO DASH: HOLD MODE"; SetDashBtn.BackgroundColor3 = Theme.Element; SetDashBtn.TextColor3 = Theme.SubText; IsAutoDashing = false end
+end, AutoBox)
+SetDashBtn.Size = UDim2.new(1, 0, 0, 28)
+
+SetJumpBtn = mkTool("AUTO JUMP: HOLD MODE", Theme.Element, function()
+    if Settings_Mode_Jump == "HOLD" then Settings_Mode_Jump = "TOGGLE"; SetJumpBtn.Text = "AUTO JUMP: TOGGLE MODE (ON/OFF)"; SetJumpBtn.BackgroundColor3 = Theme.Blue; SetJumpBtn.TextColor3 = Theme.Bg
+    else Settings_Mode_Jump = "HOLD"; SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"; SetJumpBtn.BackgroundColor3 = Theme.Element; SetJumpBtn.TextColor3 = Theme.SubText end
+end, AutoBox)
+SetJumpBtn.Size = UDim2.new(1, 0, 0, 28)
+
+UpdateCrosshairToVIM()
+
+-- === SYSTEM TAB ===
+local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
+AutoLoadBtn = mkTool("AUTO LOAD: ON", Theme.Green, nil, P_Sys)
+AutoLoadBtn.Size = UDim2.new(0.9, 0, 0, 45)
+
+AutoLoadBtn.MouseButton1Click:Connect(function()
+    IsAutoLoad = not IsAutoLoad
+    if IsAutoLoad then
+        AutoLoadBtn.Text = "AUTO LOAD: ON"
+        AutoLoadBtn.BackgroundColor3 = Theme.Green
+        AutoLoadBtn.TextColor3 = Theme.Bg
+    else
+        AutoLoadBtn.Text = "AUTO LOAD: OFF"
+        AutoLoadBtn.BackgroundColor3 = Theme.Red
+        AutoLoadBtn.TextColor3 = Theme.Text
+    end
+end)
+local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function() 
+    if CurrentConfigName then 
+        ShowPopup("SAVE OPTIONS", function(c) 
+            local b1 = Instance.new("TextButton"); b1.Size=UDim2.new(0.9,0,0,35); b1.Position=UDim2.new(0.05,0,0,0); b1.BackgroundColor3=Theme.Bg; b1.Text="Overwrite '"..CurrentConfigName.."'"; b1.TextColor3=Theme.Accent; b1.Parent=c; createCorner(b1,6); b1.ZIndex=2004; b1.MouseButton1Click:Connect(function() SaveToFile(CurrentConfigName, GetCurrentState()); ClosePopup() end); 
+            local b2 = Instance.new("TextButton"); b2.Size=UDim2.new(0.9,0,0,35); b2.Position=UDim2.new(0.05,0,0,40); b2.BackgroundColor3=Theme.Bg; b2.Text="Save as New"; b2.TextColor3=Theme.Text; b2.Parent=c; createCorner(b2,6); b2.ZIndex=2004; b2.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("NEW CONFIG", function(c2) local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c2; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c2; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); CurrentConfigName=box.Text; ClosePopup() end end); return 100 end) end); return 100 
+        end) 
+    else 
+        ShowPopup("NEW CONFIG", function(c) local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); CurrentConfigName=box.Text; ClosePopup() end end); return 100 end) 
+    end 
+end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
+
+local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local successDecode, all = pcall(function() return HttpService:JSONDecode(r) end); if successDecode and type(all) == "table" then for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local del = Instance.new("TextButton"); del.Size=UDim2.new(1,0,0,30); del.Position=UDim2.new(0,0,0,70); del.BackgroundColor3=Theme.Red; del.Text="DELETE"; del.TextColor3=Theme.Bg; del.Parent=c2; createCorner(del,6); del.ZIndex=2004; del.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+
+local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
+    ShowPopup("CONFIRM RESET?", function(c)
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
+        yes.MouseButton1Click:Connect(function()
+            -- 1. HAPUS SEMUA TOMBOL VIRTUAL
+            for _, vData in pairs(ActiveVirtualKeys) do
+                if vData.Button then vData.Button:Destroy() end
+            end
+            ActiveVirtualKeys = {}
+            
+            -- 2. HAPUS SEMUA COMBO
+            for _, c in pairs(Combos) do 
+                if c.Button then c.Button:Destroy() end 
+            end
+            Combos = {}
+            CurrentComboIndex = 0 
+            
+            -- 3. RESET VARIABLE SYSTEM
+            CurrentConfigName = nil
+            SkillMode = "INSTANT"
+            ModeBtn.Text = "MODE: INSTANT"
+            ModeBtn.BackgroundColor3 = Theme.Green
+            CurrentSmartKeyData = nil
+            SelectedComboID = nil
+            IsLayoutLocked = false
+            
+            -- 4. RESET VISUAL (Default Settings)
+            GlobalTransparency = 0
+            if TKnob then TKnob.Position = UDim2.new(0, -6, 0.5, -6) end
+            IsJoystickEnabled = false
+            JoyContainer.Visible = false
+            if JoyToggle then
+                JoyToggle.Text = "JOYSTICK: OFF"
+                JoyToggle.BackgroundColor3 = Theme.Red
+            end
+            
+            -- 5. RESET POSISI UI (Factory Default)
+            Window.Position = UDim2.new(0.5, -300, 0.5, -170)
+            ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
+            JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
+            
+            local defJoySize = 140
+            JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
+            JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
+            createCorner(JoyOuter, defJoySize)
+
+            -- 6. RESET PILIHAN WARNA TOMBOL
+            for k, btn in pairs(VirtualKeySelectors) do
+                btn.BackgroundColor3 = Theme.Element
+                btn.TextColor3 = Theme.Text
+            end
+
+            -- 7. REFRESH SEMUA
+            UpdateTransparencyFunc()
+            updateLockState()
+            if ResizerUpdateFunc then ResizerUpdateFunc() end
+            RefreshEditorUI() 
+
+            ShowNotification("Factory Reset Complete!", Theme.Accent)
+            ClosePopup()
+        end)
+        
+        no.MouseButton1Click:Connect(ClosePopup)
+        return 50
+    end)
+end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
+
+local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
+    ShowPopup("CONFIRM EXIT?", function(c)
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
+        yes.MouseButton1Click:Connect(function() 
+            isRunning = false 
+            IsAutoDashing = false 
+            -- MEMBERSIHKAN EVENT AGAR TIDAK LAG
+            for _, conn in pairs(GlobalConnections) do
+                if conn.Connected then conn:Disconnect() end
+            end
+            table.clear(GlobalConnections)
+            if ScreenGui then ScreenGui:Destroy() end 
+        end)
+        
+        no.MouseButton1Click:Connect(ClosePopup)
+        return 50
+    end)
+end, P_Sys); ExitBtn.Size=UDim2.new(0.9,0,0,45)
+
 local function LoadSpecific(configName)
     if not isfile(FileName) then return end
     
@@ -1571,270 +1867,6 @@ local function LoadSpecific(configName)
         ShowNotification("Load Partial/Error", Theme.Red) 
     end
 end
-
--- ==============================================================================
--- TAB SETTINGS & CALIBRATION
--- ==============================================================================
-
-local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,10); SetList.HorizontalAlignment="Center"
-
--- [HELPER] mkSection untuk Settings
-local function mkSetSection(title, order)
-    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 0, 18); l.Text = title; l.TextColor3 = Theme.SubText; l.Font = Enum.Font.GothamBold; l.TextSize = 10; l.TextXAlignment = "Left"; l.BackgroundTransparency = 1; l.LayoutOrder = order; l.Parent = P_Set; return l
-end
-
--- [[ 1. M1 CALIBRATION (RED) ]]
-if CrosshairUI then CrosshairUI:Destroy() end 
-CrosshairUI = Instance.new("ImageButton"); CrosshairUI.Name = "M1_Crosshair"; CrosshairUI.Size = UDim2.new(0, 50, 0, 50); CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5); CrosshairUI.BackgroundTransparency = 1; CrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"; CrosshairUI.ImageColor3 = Theme.Red; CrosshairUI.Parent = ScreenGui; CrosshairUI.Visible = false; CrosshairUI.ZIndex = 9999
-local CH_V = Instance.new("Frame"); CH_V.Size=UDim2.new(0,2,1,0); CH_V.Position=UDim2.new(0.5,-1,0,0); CH_V.BackgroundColor3=Theme.Red; CH_V.Parent=CrosshairUI; CH_V.BorderSizePixel=0
-local CH_H = Instance.new("Frame"); CH_H.Size=UDim2.new(1,0,0,2); CH_H.Position=UDim2.new(0,0,0.5,-1); CH_H.BackgroundColor3=Theme.Red; CH_H.Parent=CrosshairUI; CH_H.BorderSizePixel=0
-
-local draggingCH, dragInputCH
-CrosshairUI.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingCH = true; CrosshairUI.ImageColor3 = Theme.Green; CH_V.BackgroundColor3 = Theme.Green; CH_H.BackgroundColor3 = Theme.Green
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                draggingCH = false; CrosshairUI.ImageColor3 = Theme.Red; CH_V.BackgroundColor3 = Theme.Red; CH_H.BackgroundColor3 = Theme.Red
-                pcall(function() for _, c in pairs(P_Set:GetChildren()) do if c:IsA("TextButton") and c.Text:find("M1 POSITION") then c.Text = "FINISH M1 CALIBRATION" end end end)
-            end
-        end)
-    end
-end)
-CrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputCH = input end end)
-TrackConn(UserInputService.InputChanged:Connect(function(input)
-    if input == dragInputCH and draggingCH then
-        local vp = Camera.ViewportSize; M1_Offset = Vector2.new(input.Position.X - (vp.X / 2), input.Position.Y - (vp.Y / 2)); UpdateCrosshairToVIM()
-    end
-end))
-TrackConn(Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function() UpdateCrosshairToVIM() end))
-
-local CalibBtn = mkTool("CALIBRATE M1 POSITION (OFF)", Theme.Element, nil, P_Set); CalibBtn.Size = UDim2.new(0.9, 0, 0, 40)
-CalibBtn.MouseButton1Click:Connect(function()
-    local isVisible = not CrosshairUI.Visible; CrosshairUI.Visible = isVisible
-    if isVisible then UpdateCrosshairToVIM(); CalibBtn.BackgroundColor3 = Theme.Red; CalibBtn.TextColor3 = Theme.Bg; CalibBtn.Text = "FINISH M1 CALIBRATION"; ShowNotification("Drag RED Crosshair to Aim Point", Theme.Accent)
-    else CalibBtn.Text = "CALIBRATE M1 POSITION (OFF)"; CalibBtn.BackgroundColor3 = Theme.Element; CalibBtn.TextColor3 = Theme.Text; ShowNotification("M1 Position Saved!", Theme.Green) end
-end)
-
--- [[ 2. JUMP CALIBRATION (BLUE) ]]
-if JumpCrosshairUI then JumpCrosshairUI:Destroy() end 
-JumpCrosshairUI = Instance.new("ImageButton")
-JumpCrosshairUI.Name = "Jump_Crosshair"
-JumpCrosshairUI.Size = UDim2.new(0, 60, 0, 60)
-JumpCrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5)
-JumpCrosshairUI.BackgroundTransparency = 1
-JumpCrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"
-JumpCrosshairUI.ImageColor3 = Theme.Blue 
-JumpCrosshairUI.Parent = ScreenGui
-JumpCrosshairUI.Visible = false
-JumpCrosshairUI.ZIndex = 9999
-
-local function UpdateJumpVisual()
-    if not JumpCrosshairUI.Visible then return end
-    local jBtn = GetJumpButton()
-    if jBtn then
-        local absPos = jBtn.AbsolutePosition
-        local absSize = jBtn.AbsoluteSize
-        local targetX = absPos.X + (absSize.X / 2) + Jump_Offset.X
-        local targetY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
-        JumpCrosshairUI.Position = UDim2.new(0, targetX, 0, targetY)
-    end
-end
-TrackConn(RunService.RenderStepped:Connect(UpdateJumpVisual))
-
-local draggingJump, dragInputJump
-JumpCrosshairUI.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingJump = true
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then draggingJump = false end end)
-    end
-end)
-JumpCrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputJump = input end end)
-TrackConn(UserInputService.InputChanged:Connect(function(input)
-    if input == dragInputJump and draggingJump then
-        local jBtn = GetJumpButton()
-        if jBtn then
-            local absPos = jBtn.AbsolutePosition
-            local absSize = jBtn.AbsoluteSize
-            local defaultCenterX = absPos.X + (absSize.X / 2)
-            local defaultCenterY = absPos.Y + (absSize.Y / 2)
-            Jump_Offset = Vector2.new(input.Position.X - defaultCenterX, input.Position.Y - defaultCenterY)
-            UpdateJumpVisual()
-        end
-    end
-end))
-
-local CalibJumpBtn = mkTool("CALIBRATE JUMP (OFF)", Theme.Element, nil, P_Set); CalibJumpBtn.Size = UDim2.new(0.9, 0, 0, 40)
-CalibJumpBtn.MouseButton1Click:Connect(function()
-    local isVisible = not JumpCrosshairUI.Visible; JumpCrosshairUI.Visible = isVisible
-    if isVisible then 
-        CalibJumpBtn.BackgroundColor3 = Theme.Blue; CalibJumpBtn.TextColor3 = Theme.Bg; CalibJumpBtn.Text = "FINISH JUMP CALIBRATION"
-        ShowNotification("Drag BLUE Target to Adjust Jump", Theme.Blue)
-        UpdateJumpVisual()
-    else 
-        CalibJumpBtn.Text = "CALIBRATE JUMP (OFF)"; CalibJumpBtn.BackgroundColor3 = Theme.Element; CalibJumpBtn.TextColor3 = Theme.Text
-        ShowNotification("Jump Position Saved!", Theme.Green) 
-    end
-end)
-
-local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(0.9, 0, 0, 20); InfoLbl.Text = "RED = M1 Aim | BLUE = Jump Position"; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.TextWrapped = true; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 10; InfoLbl.Parent = P_Set
-
--- [[ 3. SKILL EXECUTION MODE (PINDAHAN DARI LAYOUT) ]]
-mkSetSection("SKILL EXECUTION MODE", 10)
-local ModeContainer = Instance.new("Frame"); ModeContainer.Size = UDim2.new(0.9, 0, 0, 40); ModeContainer.BackgroundTransparency = 1; ModeContainer.Parent = P_Set
-ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
-    if SkillMode == "INSTANT" then 
-        SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
-    else 
-        SkillMode = "INSTANT"; ModeBtn.Text = "MODE: INSTANT"; ModeBtn.BackgroundColor3 = Theme.Green; CurrentSmartKeyData=nil; SelectedComboID=nil 
-    end 
-end, ModeContainer)
-ModeBtn.Size = UDim2.new(1, 0, 1, 0)
-
--- [[ 4. AUTO BUTTON MODE ]]
-mkSetSection("AUTO BUTTON SETTINGS", 12)
-local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 110); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
-local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,8); AutoPad.PaddingLeft=UDim.new(0,8); AutoPad.PaddingRight=UDim.new(0,8)
-
-SetM1Btn = Instance.new("TextButton"); SetM1Btn.Size = UDim2.new(1, 0, 0, 28); SetM1Btn.BackgroundColor3 = Theme.Element; SetM1Btn.Text = "AUTO M1: HOLD MODE"; SetM1Btn.TextColor3 = Theme.SubText; SetM1Btn.Font = Enum.Font.GothamBold; SetM1Btn.TextSize = 10; SetM1Btn.Parent = AutoBox; createCorner(SetM1Btn, 6)
-SetM1Btn.MouseButton1Click:Connect(function()
-    if Settings_Mode_M1 == "HOLD" then Settings_Mode_M1 = "TOGGLE"; SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"; SetM1Btn.BackgroundColor3 = Theme.Blue; SetM1Btn.TextColor3 = Theme.Bg
-    else Settings_Mode_M1 = "HOLD"; SetM1Btn.Text = "AUTO M1: HOLD MODE"; SetM1Btn.BackgroundColor3 = Theme.Element; SetM1Btn.TextColor3 = Theme.SubText; IsAutoM1_Active = false end
-end)
-
-SetDashBtn = Instance.new("TextButton"); SetDashBtn.Size = UDim2.new(1, 0, 0, 28); SetDashBtn.Position = UDim2.new(0, 0, 0, 35); SetDashBtn.BackgroundColor3 = Theme.Element; SetDashBtn.Text = "AUTO DASH: HOLD MODE"; SetDashBtn.TextColor3 = Theme.SubText; SetDashBtn.Font = Enum.Font.GothamBold; SetDashBtn.TextSize = 10; SetDashBtn.Parent = AutoBox; createCorner(SetDashBtn, 6)
-SetDashBtn.MouseButton1Click:Connect(function()
-    if Settings_Mode_Dash == "HOLD" then Settings_Mode_Dash = "TOGGLE"; SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"; SetDashBtn.BackgroundColor3 = Theme.Blue; SetDashBtn.TextColor3 = Theme.Bg
-    else Settings_Mode_Dash = "HOLD"; SetDashBtn.Text = "AUTO DASH: HOLD MODE"; SetDashBtn.BackgroundColor3 = Theme.Element; SetDashBtn.TextColor3 = Theme.SubText; IsAutoDashing = false end
-end)
-
-SetJumpBtn = Instance.new("TextButton"); SetJumpBtn.Size = UDim2.new(1, 0, 0, 28); SetJumpBtn.Position = UDim2.new(0, 0, 0, 70); SetJumpBtn.BackgroundColor3 = Theme.Element; SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"; SetJumpBtn.TextColor3 = Theme.SubText; SetJumpBtn.Font = Enum.Font.GothamBold; SetJumpBtn.TextSize = 10; SetJumpBtn.Parent = AutoBox; createCorner(SetJumpBtn, 6)
-SetJumpBtn.MouseButton1Click:Connect(function()
-    if Settings_Mode_Jump == "HOLD" then Settings_Mode_Jump = "TOGGLE"; SetJumpBtn.Text = "AUTO JUMP: TOGGLE MODE (ON/OFF)"; SetJumpBtn.BackgroundColor3 = Theme.Blue; SetJumpBtn.TextColor3 = Theme.Bg
-    else Settings_Mode_Jump = "HOLD"; SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"; SetJumpBtn.BackgroundColor3 = Theme.Element; SetJumpBtn.TextColor3 = Theme.SubText end
-end)
-
-UpdateCrosshairToVIM()
-
--- === SYSTEM TAB ===
-local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
-AutoLoadBtn = mkTool("AUTO LOAD: ON", Theme.Green, nil, P_Sys)
-AutoLoadBtn.Size = UDim2.new(0.9, 0, 0, 45)
-
-AutoLoadBtn.MouseButton1Click:Connect(function()
-    IsAutoLoad = not IsAutoLoad
-    if IsAutoLoad then
-        AutoLoadBtn.Text = "AUTO LOAD: ON"
-        AutoLoadBtn.BackgroundColor3 = Theme.Green
-        AutoLoadBtn.TextColor3 = Theme.Bg
-    else
-        AutoLoadBtn.Text = "AUTO LOAD: OFF"
-        AutoLoadBtn.BackgroundColor3 = Theme.Red
-        AutoLoadBtn.TextColor3 = Theme.Text
-    end
-end)
-local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function() 
-    if CurrentConfigName then 
-        ShowPopup("SAVE OPTIONS", function(c) 
-            local b1 = Instance.new("TextButton"); b1.Size=UDim2.new(0.9,0,0,35); b1.Position=UDim2.new(0.05,0,0,0); b1.BackgroundColor3=Theme.Bg; b1.Text="Overwrite '"..CurrentConfigName.."'"; b1.TextColor3=Theme.Accent; b1.Parent=c; createCorner(b1,6); b1.ZIndex=2004; b1.MouseButton1Click:Connect(function() SaveToFile(CurrentConfigName, GetCurrentState()); ClosePopup() end); 
-            local b2 = Instance.new("TextButton"); b2.Size=UDim2.new(0.9,0,0,35); b2.Position=UDim2.new(0.05,0,0,40); b2.BackgroundColor3=Theme.Bg; b2.Text="Save as New"; b2.TextColor3=Theme.Text; b2.Parent=c; createCorner(b2,6); b2.ZIndex=2004; b2.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("NEW CONFIG", function(c2) local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c2; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c2; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); CurrentConfigName=box.Text; ClosePopup() end end); return 100 end) end); return 100 
-        end) 
-    else 
-        ShowPopup("NEW CONFIG", function(c) local box = Instance.new("TextBox"); box.Size=UDim2.new(0.9,0,0,35); box.Position=UDim2.new(0.05,0,0,0); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="Enter Name..."; box.TextColor3=Theme.Text; box.Parent=c; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(0.9,0,0,35); confirm.Position=UDim2.new(0.05,0,0,40); confirm.BackgroundColor3=Theme.Green; confirm.Text="CREATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text~="" then SaveToFile(box.Text, GetCurrentState()); CurrentConfigName=box.Text; ClosePopup() end end); return 100 end) 
-    end 
-end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
-
-local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local successDecode, all = pcall(function() return HttpService:JSONDecode(r) end); if successDecode and type(all) == "table" then for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local del = Instance.new("TextButton"); del.Size=UDim2.new(1,0,0,30); del.Position=UDim2.new(0,0,0,70); del.BackgroundColor3=Theme.Red; del.Text="DELETE"; del.TextColor3=Theme.Bg; del.Parent=c2; createCorner(del,6); del.ZIndex=2004; del.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
-
-local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
-    ShowPopup("CONFIRM RESET?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
-        
-        yes.MouseButton1Click:Connect(function()
-            -- 1. HAPUS SEMUA TOMBOL VIRTUAL
-            for _, vData in pairs(ActiveVirtualKeys) do
-                if vData.Button then vData.Button:Destroy() end
-            end
-            ActiveVirtualKeys = {}
-            
-            -- 2. HAPUS SEMUA COMBO
-            for _, c in pairs(Combos) do 
-                if c.Button then c.Button:Destroy() end 
-            end
-            Combos = {}
-            CurrentComboIndex = 0 
-            
-            -- 3. RESET VARIABLE SYSTEM
-            CurrentConfigName = nil
-            SkillMode = "INSTANT"
-            ModeBtn.Text = "MODE: INSTANT"
-            ModeBtn.BackgroundColor3 = Theme.Green
-            CurrentSmartKeyData = nil
-            SelectedComboID = nil
-            IsLayoutLocked = false
-            
-            -- 4. RESET VISUAL (Default Settings)
-            GlobalTransparency = 0
-            if TKnob then TKnob.Position = UDim2.new(0, -6, 0.5, -6) end
-            IsJoystickEnabled = false
-            JoyContainer.Visible = false
-            if JoyToggle then
-                JoyToggle.Text = "JOYSTICK: OFF"
-                JoyToggle.BackgroundColor3 = Theme.Red
-            end
-            
-            -- 5. RESET POSISI UI (Factory Default)
-            Window.Position = UDim2.new(0.5, -300, 0.5, -170)
-            ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
-            JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
-            
-            local defJoySize = 140
-            JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
-            JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
-            createCorner(JoyOuter, defJoySize)
-
-            -- 6. RESET PILIHAN WARNA TOMBOL
-            for k, btn in pairs(VirtualKeySelectors) do
-                btn.BackgroundColor3 = Theme.Element
-                btn.TextColor3 = Theme.Text
-            end
-
-            -- 7. REFRESH SEMUA
-            UpdateTransparencyFunc()
-            updateLockState()
-            if ResizerUpdateFunc then ResizerUpdateFunc() end
-            RefreshEditorUI() 
-
-            ShowNotification("Factory Reset Complete!", Theme.Accent)
-            ClosePopup()
-        end)
-        
-        no.MouseButton1Click:Connect(ClosePopup)
-        return 50
-    end)
-end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
-
-local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
-    ShowPopup("CONFIRM EXIT?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
-        
-        yes.MouseButton1Click:Connect(function() 
-            isRunning = false 
-            IsAutoDashing = false 
-            -- MEMBERSIHKAN EVENT AGAR TIDAK LAG
-            for _, conn in pairs(GlobalConnections) do
-                if conn.Connected then conn:Disconnect() end
-            end
-            table.clear(GlobalConnections)
-            if ScreenGui then ScreenGui:Destroy() end 
-        end)
-        
-        no.MouseButton1Click:Connect(ClosePopup)
-        return 50
-    end)
-end, P_Sys); ExitBtn.Size=UDim2.new(0.9,0,0,45)
 
 -- === STARTUP ===
 ShowNotification("VELOX Mobile Loaded.", Theme.Accent)
