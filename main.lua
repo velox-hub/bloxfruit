@@ -12,14 +12,14 @@ local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local FileName = "Velox_Mobile_Config.json"
 
--- CONNECTION MANAGER (Untuk mencegah memory leak saat Exit)
+-- CONNECTION MANAGER
 local GlobalConnections = {}
 local function TrackConn(conn)
     table.insert(GlobalConnections, conn)
     return conn
 end
 
--- TARGET GUI (Aman untuk Executor Pihak Ketiga)
+-- TARGET GUI
 local TargetGui = (gethui and gethui()) or game:GetService("CoreGui")
 
 -- CONFIGURATION
@@ -45,11 +45,14 @@ local DEADZONE = 0.15
 local isRunning = false 
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
+
+-- Settings Mode (Default: HOLD)
 local Settings_Mode_M1 = "HOLD" 
 local Settings_Mode_Dash = "HOLD" 
+local Settings_Mode_Jump = "HOLD" -- [BARU]
+
 local IsAutoM1_Active = false 
 local M1_Offset = Vector2.new(0, 0) 
-local ShowCrosshair = false 
 local IsAutoDashing = false 
 local CrosshairUI = nil 
 local IsJoystickEnabled = false 
@@ -102,7 +105,7 @@ local function GetJumpButton()
         if btn and btn.Visible then return btn end
     end
     
-    -- Jika tidak ketemu, cari recursive (untuk game custom)
+    -- Jika tidak ketemu, cari recursive
     local function findJump(parent)
         for _, child in pairs(parent:GetChildren()) do
             if child:IsA("GuiObject") and child.Visible and (child.Name == "JumpButton" or child.Name == "Jump") then
@@ -214,41 +217,6 @@ UpdateTransparencyFunc = function()
         JoyDrag.TextTransparency = t
         if JoyOuter:FindFirstChild("UIStroke") then JoyOuter.UIStroke.Transparency = math.clamp(0.1 + t, 0.1, 1) end
     end
-end
-
-local function IsCharacterBusy()
-    local char = LocalPlayer.Character
-    if not char then return false end
-    
-    local hum = char:FindFirstChild("Humanoid")
-    local animator = hum and hum:FindFirstChild("Animator")
-    
-    if animator then
-        -- Dapatkan semua animasi yang sedang jalan
-        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            -- Cek Prioritas. Skill biasanya Action, Action2, Action3, Action4.
-            -- Idle/Walk/Run biasanya Core atau Movement (tidak kita hitung).
-            local p = track.Priority
-            if p == Enum.AnimationPriority.Action or 
-               p == Enum.AnimationPriority.Action2 or 
-               p == Enum.AnimationPriority.Action3 or 
-               p == Enum.AnimationPriority.Action4 then
-                
-                -- Opsional: Cek jika animasi hampir selesai (sisa 0.1 detik)
-                -- Agar combo lebih cepat (animation cancelling)
-                if track.Length > 0 and (track.TimePosition < track.Length - 0.15) then
-                    return true -- Masih sibuk animasi
-                end
-            end
-        end
-    end
-    
-    -- [OPSIONAL KHUSUS BLOX FRUITS / GAME LAIN]
-    -- Kadang game menyimpan status stun/busy di value
-    if char:FindFirstChild("Stun") and char.Stun.Value > 0 then return true end
-    if char:FindFirstChild("Busy") and char.Busy.Value then return true end
-    
-    return false -- Aman, karakter diam/idle
 end
 
 local function updateLockState()
@@ -381,7 +349,7 @@ local function equipWeapon(slotIdx, isToggle)
 end
 
 -- ==============================================================================
--- [4] INPUT HANDLERS (AUTO FINISH & SMART TAP SYNC)
+-- [4] INPUT HANDLERS
 -- ==============================================================================
 
 local IsSmartHolding = false 
@@ -392,7 +360,6 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
-    -- [OPTIMASI 1] Toggle Cepat
     if isRunning then 
         isRunning = false
         return 
@@ -411,18 +378,17 @@ local function executeComboSequence(idx)
         local READY_COLOR = Color3.fromRGB(0, 255, 255)
         local CurrentActiveKey = nil
 
-        -- [HELPER] Fungsi Tunggu Pintar (Hemat CPU & Responsif)
+        -- Helper Function
         local function SmartWait(duration)
             local t = tick()
             while (tick() - t) < duration do
                 if not isRunning then return false end
-                task.wait() -- Yield sebentar agar tidak freeze
+                task.wait() 
             end
-            return isRunning -- Mengembalikan true jika masih jalan, false jika stop
+            return isRunning 
         end
 
         for i, step in ipairs(data.Steps) do
-            -- [CHECK 1] Awal Langkah
             if not isRunning then break end
             CurrentActiveKey = step.Key
 
@@ -431,44 +397,33 @@ local function executeComboSequence(idx)
                 isRunning = false; break 
             end
             
-            -- [PERSIAPAN]
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
             
-            -- Tekan Skill UI
             pressKey(step.Key) 
             
-            -- Tunggu render UI (0.05s) - Jika stop, langsung break
             if not SmartWait(0.05) then break end
 
-            -- [EKSEKUSI SERANGAN]
             if SkillMode == "SMART" and i == 1 then 
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
             else 
-                -- START DELAY (User defined)
                 if step.Delay and step.Delay > 0 then 
                     if not SmartWait(step.Delay) then break end
                 end
 
-                -- TOUCH DOWN (Start Charge)
                 VIM:SendTouchEvent(5, 0, x, y) 
                 
-                -- PROSES HOLDING
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     if not SmartWait(step.HoldTime) then break end
                 else
-                    if not SmartWait(0.05) then break end -- Tap delay
+                    if not SmartWait(0.05) then break end 
                 end
                 
-                -- TOUCH UP (Lepas)
                 VIM:SendTouchEvent(5, 2, x, y)
                 
-                -- [VALIDASI WARNA - ANTI SKIP]
-                -- Hanya dijalankan jika script masih running
                 if isRunning then
                     local targetBtn = GetMobileButtonObj(step.Key)
                     if targetBtn then
-                        -- Tunggu max 0.15s untuk melihat perubahan warna
                         local waitRender = 0
                         while waitRender < 5 do
                             if not isRunning then break end
@@ -477,7 +432,6 @@ local function executeComboSequence(idx)
                             waitRender = waitRender + 1
                         end
                         
-                        -- Loop Spam jika nyangkut
                         local safetyCount = 0
                         while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
                             VIM:SendTouchEvent(5, 0, x, y)
@@ -492,34 +446,22 @@ local function executeComboSequence(idx)
                 end
             end 
             
-            -- Cleanup Langkah Ini
             VIM:SendTouchEvent(5, 2, x, y)
             CurrentSmartKeyData = nil 
             
-            -- Jeda antar skill (Responsif)
             if not SmartWait(0.1) then break end
         end
         
-        -- ==========================================================
-        -- [CLEANUP / EMERGENCY STOP - OPTIMIZED]
-        -- ==========================================================
-        
-        -- 1. Pastikan input sentuhan bersih
+        -- CLEANUP
         VIM:SendTouchEvent(5, 2, x, y) 
 
-        -- 2. SMART FORCE RESET UI (Hanya jika stop mendadak)
         if CurrentActiveKey then
             local targetBtn = GetMobileButtonObj(CurrentActiveKey)
-            
-            -- Cek apakah skill terakhir masih nyangkut (Cyan)
             if targetBtn and targetBtn.BackgroundColor3 == READY_COLOR then
-                -- Lakukan retry ringan (maks 3x)
                 for _ = 1, 3 do
                     if targetBtn.BackgroundColor3 ~= READY_COLOR then break end
-                    
-                    pressKey(CurrentActiveKey)     -- Cancel Charge via UI
-                    VIM:SendTouchEvent(5, 2, x, y) -- Lepas M1 via VIM
-                    
+                    pressKey(CurrentActiveKey) 
+                    VIM:SendTouchEvent(5, 2, x, y)
                     task.wait(0.05)
                 end
             end
@@ -562,7 +504,7 @@ TrackConn(UserInputService.InputEnded:Connect(function(input)
 end))
 
 -- ==============================================================================
--- [5] UI CONSTRUCTION & TAB SYSTEM
+-- [5] UI CONSTRUCTION
 -- ==============================================================================
 
 if TargetGui:FindFirstChild("VeloxUI") then TargetGui.VeloxUI:Destroy() end
@@ -782,7 +724,7 @@ mkNav("🔧", "SETTINGS", "Settings", "CALIBRATION & SETTINGS")
 mkNav("⚙️", "SYSTEM", "System", "SYSTEM MANAGER")
 
 -- ==============================================================================
--- [6] GUIDE TAB CONTENT
+-- [6] GUIDE TAB
 -- ==============================================================================
 local GFrame = Instance.new("ScrollingFrame")
 GFrame.Size = UDim2.new(1, 0, 1, 0)
@@ -923,7 +865,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         -- Variable Status Hold Instant
         local isHoldingInstant = false 
         
-        -- [BARU] Variable Status Auto Jump
+        -- Variable Status Auto Jump
         local isAutoJumping = false
         
         btn.InputBegan:Connect(function(input)
@@ -977,30 +919,53 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     return 
                 end
 
-                -- [[ C. LOGIKA JUMP (BARU DITAMBAHKAN) ]]
+                -- [[ C. LOGIKA JUMP (TOGGLE/HOLD) ]]
                 if id == "Jump" then
-                    isAutoJumping = true
-                    btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                    
-                    task.spawn(function()
-                        while isAutoJumping do
-                            local jumpBtn = GetJumpButton() -- Pastikan fungsi ini ada di Utility
-                            if jumpBtn then
-                                -- Hitung Titik Tengah Tombol Jump Asli
-                                local absPos = jumpBtn.AbsolutePosition
-                                local absSize = jumpBtn.AbsoluteSize
-                                local centerX = absPos.X + (absSize.X / 2)
-                                local centerY = absPos.Y + (absSize.Y / 2)
-                                
-                                -- Tap Tombol Jump
-                                VIM:SendTouchEvent(5, 0, centerX, centerY)
-                                task.wait(0.05)
-                                VIM:SendTouchEvent(5, 2, centerX, centerY)
-                            end
-                            -- Interval 0.8 detik (Cocok untuk Bunny Hop)
-                            task.wait(0.8) 
+                    if Settings_Mode_Jump == "TOGGLE" then
+                        isAutoJumping = not isAutoJumping
+                        if isAutoJumping then
+                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                            task.spawn(function()
+                                while isAutoJumping and ActiveVirtualKeys["Jump"] do
+                                    local jumpBtn = GetJumpButton()
+                                    if jumpBtn then
+                                        local absPos = jumpBtn.AbsolutePosition
+                                        local absSize = jumpBtn.AbsoluteSize
+                                        local centerX = absPos.X + (absSize.X / 2)
+                                        local centerY = absPos.Y + (absSize.Y / 2)
+                                        VIM:SendTouchEvent(5, 0, centerX, centerY)
+                                        task.wait(0.05)
+                                        VIM:SendTouchEvent(5, 2, centerX, centerY)
+                                    end
+                                    task.wait(0.8) 
+                                end
+                                if ActiveVirtualKeys["Jump"] then
+                                    ActiveVirtualKeys["Jump"].Button.BackgroundColor3 = Color3.new(0,0,0)
+                                    ActiveVirtualKeys["Jump"].Button.TextColor3 = Theme.Accent
+                                end
+                            end)
+                        else
+                            btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                         end
-                    end)
+                    else
+                        isAutoJumping = true
+                        btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                        task.spawn(function()
+                            while isAutoJumping do
+                                local jumpBtn = GetJumpButton()
+                                if jumpBtn then
+                                    local absPos = jumpBtn.AbsolutePosition
+                                    local absSize = jumpBtn.AbsoluteSize
+                                    local centerX = absPos.X + (absSize.X / 2)
+                                    local centerY = absPos.Y + (absSize.Y / 2)
+                                    VIM:SendTouchEvent(5, 0, centerX, centerY)
+                                    task.wait(0.05)
+                                    VIM:SendTouchEvent(5, 2, centerX, centerY)
+                                end
+                                task.wait(0.8)
+                            end
+                        end)
+                    end
                     return
                 end
 
@@ -1018,7 +983,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     end
 
                     if SkillMode == "INSTANT" then
-                        -- START HOLD
                         isHoldingInstant = true
                         pressKey(kn)
                         
@@ -1027,12 +991,10 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         local y = (vp.Y / 2) + M1_Offset.Y
                         
                         task.wait(0.02)
-                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down (Tahan)
+                        VIM:SendTouchEvent(5, 0, x, y) 
                         
-                        -- Visual Feedback
                         btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     else 
-                        -- SMART MODE
                         pressKey(kn) 
                         CurrentSmartKeyData = vData
                         SmartTouchObject = input 
@@ -1055,8 +1017,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                 end
                 
-                -- [[ MATIKAN JUMP ]]
-                if id == "Jump" then
+                if id == "Jump" and Settings_Mode_Jump == "HOLD" then
                     isAutoJumping = false
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                 end
@@ -1070,16 +1031,12 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             local x = (vp.X / 2) + M1_Offset.X
                             local y = (vp.Y / 2) + M1_Offset.Y
                             
-                            -- 1. LEPAS NORMAL
                             VIM:SendTouchEvent(5, 2, x, y) 
                             
-                            -- 2. VALIDASI WARNA & PAKSA LEPAS (ANTI-STUCK)
                             task.spawn(function()
                                 local targetBtn = GetMobileButtonObj(kn)
                                 local READY_COLOR = Color3.fromRGB(0, 255, 255) 
-                                
                                 task.wait(0.1) 
-                                
                                 if targetBtn then
                                     local safetyCount = 0
                                     while targetBtn.BackgroundColor3 == READY_COLOR and safetyCount < 10 do
@@ -1109,26 +1066,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Green; VirtualKeySelectors[id].TextColor3=Theme.Bg end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end
     end
-end
-
-CreateComboButtonFunc = function(idx, loadedSteps)
-    local btn = Instance.new("TextButton"); btn.Size = UDim2.new(0, 60, 0, 60); btn.Position = UDim2.new(0.5, -30, 0.5, 0); btn.BackgroundColor3 = Theme.Sidebar; btn.Text = "C"..idx; btn.TextColor3 = Theme.Accent; btn.Font = Enum.Font.GothamBold; btn.TextSize = 18; btn.Parent = ScreenGui; btn.Selectable = false; btn.ZIndex = 70; createCorner(btn, 30); local st = createStroke(btn, Theme.Accent)
-    MakeDraggable(btn, function() 
-        if SkillMode == "INSTANT" then executeComboSequence(idx) 
-        else 
-            if SelectedComboID==idx then SelectedComboID=nil; btn.BackgroundColor3=Theme.Sidebar; btn.UIStroke.Color=Theme.Accent; isRunning=false 
-            else 
-                if SelectedComboID and Combos[SelectedComboID] then Combos[SelectedComboID].Button.BackgroundColor3=Theme.Sidebar; Combos[SelectedComboID].Button.UIStroke.Color=Theme.Accent end
-                SelectedComboID=idx; btn.BackgroundColor3=Theme.Green; btn.UIStroke.Color=Theme.Green
-                if CurrentSmartKeyData then local old=ActiveVirtualKeys[CurrentSmartKeyData.ID]; if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end; CurrentSmartKeyData=nil end 
-            end 
-        end 
-    end)
-    local steps = loadedSteps or {}
-    table.insert(Combos, {ID=idx, Name="C"..idx, Button=btn, Steps=steps})
-    CurrentComboIndex = idx
-    UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end; RefreshEditorUI()
-    if not loadedSteps then ShowNotification("Combo Added", Theme.Green) end
 end
 
 -- ==============================================================================
@@ -1234,223 +1171,7 @@ end))
 TrackConn(UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragS=false end end))
 
 -- ==============================================================================
--- [10] COMBO EDITOR TAB
--- ==============================================================================
-local EmptyMsg = Instance.new("TextLabel"); EmptyMsg.Size=UDim2.new(1,0,1,0); EmptyMsg.Text="Go to LAYOUT tab to Add Combo first."; EmptyMsg.TextColor3=Theme.SubText; EmptyMsg.BackgroundTransparency=1; EmptyMsg.Font=Enum.Font.GothamBold; EmptyMsg.TextSize=14; EmptyMsg.Parent=P_Edit
-local TopNav = Instance.new("Frame"); TopNav.Size=UDim2.new(1,0,0,35); TopNav.BackgroundTransparency=1; TopNav.Parent=P_Edit
-local NavPrev = Instance.new("TextButton"); NavPrev.Size=UDim2.new(0,30,0,30); NavPrev.Position=UDim2.new(0,5,0,0); NavPrev.BackgroundColor3=Theme.Element; NavPrev.Text="<"; NavPrev.TextColor3=Theme.Accent; NavPrev.Font=Enum.Font.GothamBold; NavPrev.Parent=TopNav; createCorner(NavPrev,6)
-local NavNext = Instance.new("TextButton"); NavNext.Size=UDim2.new(0,30,0,30); NavNext.Position=UDim2.new(1,-35,0,0); NavNext.BackgroundColor3=Theme.Element; NavNext.Text=">"; NavNext.TextColor3=Theme.Accent; NavNext.Font=Enum.Font.GothamBold; NavNext.Parent=TopNav; createCorner(NavNext,6)
-local NavLbl = Instance.new("TextLabel"); NavLbl.Size=UDim2.new(0.6,0,1,0); NavLbl.Position=UDim2.new(0.2,0,0,0); NavLbl.Text="No Combo Selected"; NavLbl.TextColor3=Theme.Text; NavLbl.BackgroundTransparency=1; NavLbl.Font=Enum.Font.GothamBold; NavLbl.TextSize=14; NavLbl.Parent=TopNav
-local EditScroll=Instance.new("ScrollingFrame"); EditScroll.Size=UDim2.new(1,0,0.75,0); EditScroll.Position=UDim2.new(0,0,0.12,0); EditScroll.BackgroundTransparency=1; EditScroll.ScrollBarThickness=3; EditScroll.Parent=P_Edit; local EditList=Instance.new("UIListLayout"); EditList.Parent=EditScroll; EditList.Padding=UDim.new(0,8)
-local BottomBar = Instance.new("Frame"); BottomBar.Size=UDim2.new(1,0,0,40); BottomBar.Position=UDim2.new(0,0,1,0); BottomBar.AnchorPoint=Vector2.new(0,1); BottomBar.BackgroundTransparency=1; BottomBar.Parent=P_Edit
-local AddAction=Instance.new("TextButton"); AddAction.Size=UDim2.new(1,0,1,-5); AddAction.Text="+ ADD ACTION"; AddAction.BackgroundColor3=Theme.Green; AddAction.TextColor3=Theme.Bg; AddAction.Font=Enum.Font.GothamBold; AddAction.Parent=BottomBar; AddAction.Selectable=false; createCorner(AddAction,6)
-
-RefreshEditorUI = function()
-    if CurrentComboIndex == 0 or not Combos[CurrentComboIndex] then NavLbl.Text="No Combo Selected"; EmptyMsg.Visible=true; EditScroll.Visible=false; BottomBar.Visible=false; TopNav.Visible=false return end
-    EmptyMsg.Visible=false; EditScroll.Visible=true; BottomBar.Visible=true; TopNav.Visible=true; local d = Combos[CurrentComboIndex]; NavLbl.Text = d.Name
-    for _,c in pairs(EditScroll:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
-    EditScroll.CanvasSize = UDim2.new(0,0,0, (#d.Steps * 65) + 50)
-    for i,s in ipairs(d.Steps) do
-        local h = (s.IsHold) and 85 or 60; local r = Instance.new("Frame"); r.Size=UDim2.new(1,0,0,h); r.BackgroundColor3=Theme.Element; r.Parent=EditScroll; createCorner(r,6)
-        local top = Instance.new("Frame"); top.Size=UDim2.new(1,0,0,30); top.BackgroundTransparency=1; top.Parent=r
-        local w = Instance.new("TextButton"); w.Size=UDim2.new(0.25,0,1,0); w.Position=UDim2.new(0.02,0,0,0); w.Text=WeaponData[s.Slot].name; w.TextColor3=WeaponData[s.Slot].color; w.BackgroundTransparency=1; w.Parent=top; w.Font=Enum.Font.GothamBold; w.TextSize=11; w.TextXAlignment="Left"; w.Selectable=false; w.MouseButton1Click:Connect(function() s.Slot=(s.Slot%4)+1; s.Key=WeaponData[s.Slot].keys[1]; RefreshEditorUI() end)
-        local k = Instance.new("TextButton"); k.Size=UDim2.new(0.15,0,1,0); k.Position=UDim2.new(0.3,0,0,0); k.Text="["..s.Key.."]"; k.TextColor3=Theme.Text; k.BackgroundTransparency=1; k.Parent=top; k.Font=Enum.Font.GothamBold; k.TextSize=11; k.Selectable=false; k.MouseButton1Click:Connect(function() local l=WeaponData[s.Slot].keys; local idx=1; for j,v in ipairs(l) do if v==s.Key then idx=j end end; s.Key=l[(idx%#l)+1]; RefreshEditorUI() end)
-        local m = Instance.new("TextButton"); m.Size=UDim2.new(0.25,0,0.7,0); m.Position=UDim2.new(0.5,0,0.15,0); m.Text=s.IsHold and "HOLD" or "TAP"; m.BackgroundColor3=s.IsHold and Theme.Accent or Theme.Green; m.TextColor3=Theme.Bg; m.Parent=top; m.Font=Enum.Font.GothamBold; m.TextSize=10; m.Selectable=false; createCorner(m,4); m.MouseButton1Click:Connect(function() s.IsHold = not s.IsHold; RefreshEditorUI() end)
-        local x = Instance.new("TextButton"); x.Size=UDim2.new(0.1,0,1,0); x.Position=UDim2.new(0.9,0,0,0); x.Text="X"; x.TextColor3=Theme.Red; x.BackgroundTransparency=1; x.Parent=top; x.TextSize=11; x.Font=Enum.Font.GothamBold; x.Selectable=false; x.MouseButton1Click:Connect(function() table.remove(d.Steps, i); RefreshEditorUI() end)
-        local function mkSlid(y, t, v, mx, cb, c) local f=Instance.new("Frame"); f.Size=UDim2.new(1,0,0,25); f.Position=UDim2.new(0,0,0,y); f.BackgroundTransparency=1; f.Parent=r; local txt=Instance.new("TextLabel"); txt.Size=UDim2.new(0.3,0,1,0); txt.Position=UDim2.new(0.02,0,0,0); txt.Text=string.format(t,v); txt.TextColor3=c; txt.BackgroundTransparency=1; txt.TextSize=9; txt.TextXAlignment="Left"; txt.Parent=f; local bg=Instance.new("Frame"); bg.Size=UDim2.new(0.6,0,0,4); bg.Position=UDim2.new(0.35,0,0.5,-2); bg.BackgroundColor3=Theme.Stroke; bg.Parent=f; createCorner(bg,2); local kn=Instance.new("TextButton"); kn.Size=UDim2.new(0,10,0,10); kn.BackgroundColor3=Theme.Text; kn.Text=""; kn.Parent=bg; kn.Selectable=false; createCorner(kn,5); kn.Position=UDim2.new(math.clamp(v/mx,0,1),-5,0.5,-5); local sl=false; kn.InputBegan:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.Touch or inp.UserInputType==Enum.UserInputType.MouseButton1 then sl=true end end); TrackConn(UserInputService.InputChanged:Connect(function(inp) if sl and (inp.UserInputType==Enum.UserInputType.MouseMovement or inp.UserInputType==Enum.UserInputType.Touch) then local p=math.clamp((inp.Position.X-bg.AbsolutePosition.X)/bg.AbsoluteSize.X,0,1); kn.Position=UDim2.new(p,-5,0.5,-5); cb(p); txt.Text=string.format(t, (p*mx)) end end)); TrackConn(UserInputService.InputEnded:Connect(function(inp) if inp.UserInputType==Enum.UserInputType.Touch or inp.UserInputType==Enum.UserInputType.MouseButton1 then sl=false end end)) end
-        mkSlid(30, "Wait: +%.1fs", s.Delay or 0, 2.0, function(p) s.Delay=math.floor(p*2*10)/10 end, Theme.SubText)
-        if s.IsHold then mkSlid(55, "Hold: %.1fs", s.HoldTime or 0.1, 3.0, function(p) s.HoldTime=math.floor(p*3*10)/10 end, Theme.Accent) end
-    end
-end
-AddAction.MouseButton1Click:Connect(function() table.insert(Combos[CurrentComboIndex].Steps, {Slot=1, Key="Z", Delay=0, IsHold=false, HoldTime=0.5}); RefreshEditorUI() end)
-NavPrev.MouseButton1Click:Connect(function() if #Combos>1 then CurrentComboIndex=CurrentComboIndex-1; if CurrentComboIndex<1 then CurrentComboIndex=#Combos end; RefreshEditorUI() end end)
-NavNext.MouseButton1Click:Connect(function() if #Combos>1 then CurrentComboIndex=CurrentComboIndex+1; if CurrentComboIndex>#Combos then CurrentComboIndex=1 end; RefreshEditorUI() end end)
-
--- ==============================================================================
--- [11] SAVE & LOAD IMPLEMENTATION
--- ==============================================================================
-local function UpdateCrosshairToVIM()
-    if not CrosshairUI then return end
-    local vp = Camera.ViewportSize
-    local vimX = (vp.X / 2) + M1_Offset.X
-    local vimY = (vp.Y / 2) + M1_Offset.Y
-    CrosshairUI.Position = UDim2.new(0, vimX, 0, vimY)
-    pcall(function()
-        for _, c in pairs(P_Set:GetChildren()) do
-            if c:IsA("TextButton") and c.Text:find("X:") then
-                c.Text = "X: " .. math.floor(vimX) .. " | Y: " .. math.floor(vimY)
-            end
-        end
-    end)
-end
-
-local function GetCurrentState()
-    local function getLayout(obj)
-        if not obj then return {px=0, po=0, py=0, poy=0, sx=0, so=0, sy=0, soy=0} end
-        return {px=obj.Position.X.Scale, po=obj.Position.X.Offset, py=obj.Position.Y.Scale, poy=obj.Position.Y.Offset, sx=obj.Size.X.Scale, so=obj.Size.X.Offset, sy=obj.Size.Y.Scale, soy=obj.Size.Y.Offset}
-    end
-    local data = { Transparency = GlobalTransparency, JoystickEnabled = IsJoystickEnabled, SkillMode = SkillMode, LayoutLocked = IsLayoutLocked, Pos_Window = getLayout(Window), Pos_Toggle = getLayout(ToggleBtn), Pos_Joy = getLayout(JoyContainer), Pos_JoyOuter = getLayout(JoyOuter), Combos = {}, VirtualKeys = {}, M1_OffsetX = M1_Offset.X, M1_OffsetY = M1_Offset.Y, Settings_Mode_M1 = Settings_Mode_M1, Settings_Mode_Dash = Settings_Mode_Dash}
-    for _, combo in ipairs(Combos) do if combo.Button then table.insert(data.Combos, {ID = combo.ID, Name = combo.Name, Steps = combo.Steps, Layout = getLayout(combo.Button)}) end end
-    for id, vData in pairs(ActiveVirtualKeys) do if vData.Button then table.insert(data.VirtualKeys, {ID = id, KeyName = vData.KeyName, Slot = vData.Slot, Layout = getLayout(vData.Button)}) end end
-    return data
-end
-
-local function SaveToFile(configName, data)
-    local fullData = {}
-    if isfile(FileName) then
-        local success, result = pcall(function() local content = readfile(FileName); if content == "" then return {} end; return HttpService:JSONDecode(content) end)
-        if success and type(result) == "table" then fullData = result end
-    end
-    fullData[configName] = data; fullData["LastUsed"] = configName
-    writefile(FileName, HttpService:JSONEncode(fullData))
-    ShowNotification("Saved: " .. configName, Theme.Green)
-end
-
-local function LoadSpecific(configName)
-    if not isfile(FileName) then return end
-    
-    -- 1. Baca File
-    local successRead, fileContent = pcall(function() return readfile(FileName) end)
-    if not successRead or fileContent == "" then return end
-    
-    -- 2. Decode JSON
-    local successDecode, fileData = pcall(function() return HttpService:JSONDecode(fileContent) end)
-    if not successDecode or type(fileData) ~= "table" or not fileData[configName] then return end
-    
-    -- 3. Terapkan Data (Pcall)
-    local applySuccess, err = pcall(function()
-        -- [!] DEFINISI VARIABEL DATA ADA DI SINI
-        local data = fileData[configName]
-        
-        -- ====================================================
-        -- [PERBAIKAN] LOGIKA SETTINGS DIPINDAHKAN KE SINI
-        -- ====================================================
-        
-        -- Load Settings Mode M1
-        if data.Settings_Mode_M1 then
-            Settings_Mode_M1 = data.Settings_Mode_M1
-            if SetM1Btn then
-                if Settings_Mode_M1 == "TOGGLE" then
-                    SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"
-                    SetM1Btn.BackgroundColor3 = Theme.Blue
-                    SetM1Btn.TextColor3 = Theme.Bg
-                else
-                    SetM1Btn.Text = "AUTO M1: HOLD MODE"
-                    SetM1Btn.BackgroundColor3 = Theme.Element
-                    SetM1Btn.TextColor3 = Theme.SubText
-                end
-            end
-        end
-
-        -- Load Settings Mode Dash
-        if data.Settings_Mode_Dash then
-            Settings_Mode_Dash = data.Settings_Mode_Dash
-            if SetDashBtn then
-                if Settings_Mode_Dash == "TOGGLE" then
-                    SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"
-                    SetDashBtn.BackgroundColor3 = Theme.Blue
-                    SetDashBtn.TextColor3 = Theme.Bg
-                else
-                    SetDashBtn.Text = "AUTO DASH: HOLD MODE"
-                    SetDashBtn.BackgroundColor3 = Theme.Element
-                    SetDashBtn.TextColor3 = Theme.SubText
-                end
-            end
-        end
-        
-        -- ====================================================
-        -- LANJUTAN LOGIKA LAINNYA
-        -- ====================================================
-
-        local function applyLayout(obj, layoutData)
-            if not obj or not layoutData then return end
-            obj.Position = UDim2.new(layoutData.px, layoutData.po, layoutData.py, layoutData.poy)
-            obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
-        end
-
-        if data.M1_OffsetX and data.M1_OffsetY then 
-            M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
-            UpdateCrosshairToVIM() 
-        end
-
-        GlobalTransparency = data.Transparency or 0
-        if TKnob then TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6) end
-        UpdateTransparencyFunc()
-        
-        IsLayoutLocked = data.LayoutLocked or false
-        updateLockState()
-
-        IsJoystickEnabled = data.JoystickEnabled or false
-        if JoyContainer then JoyContainer.Visible = IsJoystickEnabled end
-        if JoyToggle then 
-            if IsJoystickEnabled then 
-                JoyToggle.Text = "JOYSTICK: ON"
-                JoyToggle.BackgroundColor3 = Theme.Green 
-            else 
-                JoyToggle.Text = "JOYSTICK: OFF"
-                JoyToggle.BackgroundColor3 = Theme.Red 
-            end 
-        end
-
-        SkillMode = data.SkillMode or "INSTANT"
-        if ModeBtn then 
-            if SkillMode == "SMART" then 
-                ModeBtn.Text = "MODE: SMART TAP"
-                ModeBtn.BackgroundColor3 = Theme.Blue 
-            else 
-                ModeBtn.Text = "MODE: INSTANT"
-                ModeBtn.BackgroundColor3 = Theme.Green 
-            end 
-        end
-
-        if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
-        if data.Pos_Toggle then applyLayout(ToggleBtn, data.Pos_Toggle) end
-        if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
-        if data.Pos_JoyOuter then 
-            applyLayout(JoyOuter, data.Pos_JoyOuter)
-            if data.Pos_JoyOuter.so then createCorner(JoyOuter, data.Pos_JoyOuter.so) end 
-        end
-
-        -- Bersihkan tombol lama
-        for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end; Combos = {}
-        for _, vData in pairs(ActiveVirtualKeys) do if vData.Button then vData.Button:Destroy() end end; ActiveVirtualKeys = {}
-        
-        -- Load Combos
-        if data.Combos and type(data.Combos) == "table" then 
-            for _, cData in ipairs(data.Combos) do 
-                CreateComboButtonFunc(cData.ID, cData.Steps)
-                local createdCombo = Combos[#Combos]
-                if createdCombo and cData.Layout then applyLayout(createdCombo.Button, cData.Layout) end 
-            end 
-        end
-        
-        -- Load Virtual Keys
-        if data.VirtualKeys and type(data.VirtualKeys) == "table" then 
-            for _, vData in ipairs(data.VirtualKeys) do 
-                if vData.KeyName then 
-                    toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
-                    local createdKey = ActiveVirtualKeys[vData.ID]
-                    if createdKey and vData.Layout then 
-                        applyLayout(createdKey.Button, vData.Layout)
-                        if vData.Layout.so then createCorner(createdKey.Button, 12) end 
-                    end 
-                end 
-            end 
-        end
-        
-        if ResizerUpdateFunc then ResizerUpdateFunc() end
-    end)
-
-    if applySuccess then 
-        ShowNotification("Loaded: " .. configName, Theme.Blue) 
-    else 
-        warn("Velox Load Error: " .. tostring(err))
-        ShowNotification("Load Partial/Error", Theme.Red) 
-    end
-end
-
--- ==============================================================================
--- TAB SETTINGS & CALIBRATION
+-- [CALIBRATION]
 -- ==============================================================================
 
 local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,10); SetList.HorizontalAlignment="Center"
@@ -1488,10 +1209,8 @@ end)
 local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(0.9, 0, 0, 40); InfoLbl.Text = "The Red Crosshair shows EXACTLY where the script will tap."; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.TextWrapped = true; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 11; InfoLbl.Parent = P_Set
 UpdateCrosshairToVIM()
 
--- ... (Di bawah kode InfoLbl Kalibrasi) ...
-
 mkSection("AUTO BUTTON MODE", 10)
-local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 90); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 11; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
+local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 130); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 11; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
 local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,10); AutoPad.PaddingLeft=UDim.new(0,10); AutoPad.PaddingRight=UDim.new(0,10)
 
 -- Tombol Setting M1
@@ -1516,7 +1235,7 @@ SetM1Btn.MouseButton1Click:Connect(function()
         SetM1Btn.Text = "AUTO M1: HOLD MODE"
         SetM1Btn.BackgroundColor3 = Theme.Element
         SetM1Btn.TextColor3 = Theme.SubText
-        IsAutoM1_Active = false -- Matikan jika sedang nyala
+        IsAutoM1_Active = false 
     end
 end)
 
@@ -1543,7 +1262,33 @@ SetDashBtn.MouseButton1Click:Connect(function()
         SetDashBtn.Text = "AUTO DASH: HOLD MODE"
         SetDashBtn.BackgroundColor3 = Theme.Element
         SetDashBtn.TextColor3 = Theme.SubText
-        IsAutoDashing = false -- Matikan jika sedang nyala
+        IsAutoDashing = false 
+    end
+end)
+
+-- [BARU] Tombol Setting Jump
+local SetJumpBtn = Instance.new("TextButton")
+SetJumpBtn.Size = UDim2.new(1, 0, 0, 30)
+SetJumpBtn.Position = UDim2.new(0, 0, 0, 80)
+SetJumpBtn.BackgroundColor3 = Theme.Element
+SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"
+SetJumpBtn.TextColor3 = Theme.SubText
+SetJumpBtn.Font = Enum.Font.GothamBold
+SetJumpBtn.TextSize = 11
+SetJumpBtn.Parent = AutoBox
+createCorner(SetJumpBtn, 6)
+
+SetJumpBtn.MouseButton1Click:Connect(function()
+    if Settings_Mode_Jump == "HOLD" then
+        Settings_Mode_Jump = "TOGGLE"
+        SetJumpBtn.Text = "AUTO JUMP: TOGGLE MODE (ON/OFF)"
+        SetJumpBtn.BackgroundColor3 = Theme.Blue
+        SetJumpBtn.TextColor3 = Theme.Bg
+    else
+        Settings_Mode_Jump = "HOLD"
+        SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"
+        SetJumpBtn.BackgroundColor3 = Theme.Element
+        SetJumpBtn.TextColor3 = Theme.SubText
     end
 end)
 
