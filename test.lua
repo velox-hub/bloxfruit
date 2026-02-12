@@ -943,18 +943,15 @@ end))
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
     local kn = tostring(keyName)
-
     
-    if not slotIdx then
-        if kn == "1" then slotIdx = 1 elseif kn == "2" then slotIdx = 2 elseif kn == "3" then slotIdx = 3 elseif kn == "4" then slotIdx = 4 end
-    end
-
+    -- [1] ID UNIK (Penting agar tidak bentrok)
     local myTouchID = 0
     if id == "Jump" then myTouchID = 50
     elseif id == "Dodge" then myTouchID = 51
     elseif slotIdx then myTouchID = 10 + slotIdx 
-    else myTouchID = (string.byte(kn) % 20) + 20 end
+    else myTouchID = (string.byte(kn) % 20) + 20 end 
 
+    -- Hapus tombol lama jika ada
     if ActiveVirtualKeys[id] then 
         if ActiveVirtualKeys[id].Button then ActiveVirtualKeys[id].Button:Destroy() end
         ActiveVirtualKeys[id]=nil
@@ -962,284 +959,149 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         if SkillMode == "SMART" and CurrentSmartKeyData and CurrentSmartKeyData.ID == id then CurrentSmartKeyData = nil end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end
     else
+        -- [2] SETUP TOMBOL VISUAL
         local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 50, 0, 50); btn.Position = UDim2.new(0.5, 0, 0.5, 0); btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); btn.Text = id; btn.TextColor3 = Theme.Accent; btn.Font = Enum.Font.GothamBold; btn.TextSize = 20; btn.TextScaled = true; btn.Parent = ScreenGui; btn.Selectable = false; btn.ZIndex = 60
+        btn.Size = UDim2.new(0, 50, 0, 50); btn.Position = UDim2.new(0.5, 0, 0.5, 0); 
+        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); -- Default Hitam
+        btn.Text = id; btn.TextColor3 = Theme.Accent; btn.Font = Enum.Font.GothamBold; btn.TextSize = 20; btn.TextScaled = true; btn.Parent = ScreenGui; btn.Selectable = false; btn.ZIndex = 60
         createCorner(btn, 12); createStroke(btn, Theme.Accent); MakeDraggable(btn, nil)
         
         local vData = {ID=id, Slot=slotIdx, Button=btn, KeyName=kn}
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
-        -- Variable Status
-        local isHoldingInstant = false 
-        local isAutoJumping = false
-        -- [TAMBAHAN BARU] Variabel untuk melacak apakah jari benar-benar nempel
-        local isFingerDown = false 
+        -- STATUS VARIABEL (Sederhana)
+        local isActive = false -- Untuk Toggle (Nyala/Mati)
+        local isHolding = false -- Untuk Hold (Ditekan/Dilepas)
 
-        -- [TAMBAHAN BARU] Fungsi "Rem Darurat" untuk mematikan semua aksi
-        local function StopAction()
-            isFingerDown = false
-            isHoldingInstant = false
-            isAutoJumping = false
-            
-            -- Reset Warna Tombol
-            btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-            btn.TextColor3 = Theme.Accent
-
-            -- PAKSA LEPAS INPUT (VIM Release)
-            if id == "Jump" then
-                local jumpBtn = GetJumpButton()
-                if jumpBtn then
-                    local fx = jumpBtn.AbsolutePosition.X + (jumpBtn.AbsoluteSize.X / 2) + Jump_Offset.X
-                    local fy = jumpBtn.AbsolutePosition.Y + (jumpBtn.AbsoluteSize.Y / 2) + Jump_Offset.Y
-                    -- Kirim sinyal lepas (State 2)
-                    VIM:SendTouchEvent(myTouchID, 2, fx, fy) 
+        -- [HELPER] Fungsi Spam Klik Sederhana (Untuk Jump/Dodge/M1)
+        local function StartSpamLogic(targetFunc)
+            task.spawn(function()
+                while (isActive or isHolding) and ActiveVirtualKeys[id] do
+                    targetFunc()
+                    task.wait(0.15) -- Spam setiap 0.15 detik
                 end
-            elseif isSkillKey and SkillMode == "INSTANT" then
-                local vp = Camera.ViewportSize
-                local x = (vp.X / 2) + M1_Offset.X
-                local y = (vp.Y / 2) + M1_Offset.Y
-                -- Kirim sinyal lepas 2 kali biar yakin
-                VIM:SendTouchEvent(myTouchID, 2, x, y)
-                task.delay(0.05, function() VIM:SendTouchEvent(myTouchID, 2, x, y) end)
+                -- Reset Warna saat berhenti
+                btn.BackgroundColor3 = Color3.new(0,0,0)
+                btn.TextColor3 = Theme.Accent
+            end)
+        end
+
+        -- [HELPER] Fungsi Eksekusi Jump (Tanpa cek aneh2)
+        local function DoJump()
+            local jb = GetJumpButton()
+            if jb then
+                local fx = jb.AbsolutePosition.X + (jb.AbsoluteSize.X/2) + Jump_Offset.X
+                local fy = jb.AbsolutePosition.Y + (jb.AbsoluteSize.Y/2) + Jump_Offset.Y
+                VIM:SendTouchEvent(myTouchID, 0, fx, fy)
+                task.wait(0.05)
+                VIM:SendTouchEvent(myTouchID, 2, fx, fy)
             end
         end
-        
+
+        -- [3] EVENT SAAT DITEKAN
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                isFingerDown = true   
-                -- [[ A. LOGIKA M1 (AUTO CLICK) ]]
-                if id == "M1" then 
-                    if Settings_Mode_M1 == "TOGGLE" then
-                        IsAutoM1_Active = not IsAutoM1_Active
-                        if IsAutoM1_Active then
-                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                            task.spawn(function()
-                                while IsAutoM1_Active and ActiveVirtualKeys["M1"] do TapM1(); task.wait(0.1) end
-                                if ActiveVirtualKeys["M1"] then
-                                    ActiveVirtualKeys["M1"].Button.BackgroundColor3 = Color3.new(0,0,0)
-                                    ActiveVirtualKeys["M1"].Button.TextColor3 = Theme.Accent
-                                end
-                            end)
-                        else
-                            btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
-                        end
-                    else
-                        IsAutoM1_Active = true
-                        btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                        task.spawn(function() while IsAutoM1_Active do TapM1(); task.wait(0.1) end end)
-                    end
-                    return 
-                end
                 
-                -- [[ B. LOGIKA DODGE ]]
-                if id == "Dodge" then 
-                    if Settings_Mode_Dash == "TOGGLE" then
-                        IsAutoDashing = not IsAutoDashing
-                        if IsAutoDashing then
-                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                            task.spawn(function()
-                                while IsAutoDashing and ActiveVirtualKeys["Dodge"] do TriggerDodge(); task.wait(0.15) end
-                                if ActiveVirtualKeys["Dodge"] then
-                                    ActiveVirtualKeys["Dodge"].Button.BackgroundColor3 = Color3.new(0,0,0)
-                                    ActiveVirtualKeys["Dodge"].Button.TextColor3 = Theme.Accent
-                                end
-                            end)
-                        else
-                            btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
-                        end
-                    else
-                        IsAutoDashing = true
-                        btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                        task.spawn(function() while IsAutoDashing do TriggerDodge(); task.wait(0.15) end end)
-                    end
-                    return 
+                -- A. WEAPON (Sederhana: Klik langsung equip)
+                if isWeaponKey then
+                    equipWeapon(slotIdx, true)
+                    return
                 end
 
-                -- [[ C. LOGIKA JUMP ]]
-                if id == "Jump" then
-                    if Settings_Mode_Jump == "TOGGLE" then
-                        isAutoJumping = not isAutoJumping
-                        if isAutoJumping then
+                -- B. JUMP / DODGE / M1 (Logic Gabungan Sederhana)
+                if id == "Jump" or id == "Dodge" or id == "M1" then
+                    local mode = "HOLD"
+                    if id == "Jump" then mode = Settings_Mode_Jump
+                    elseif id == "Dodge" then mode = Settings_Mode_Dash
+                    elseif id == "M1" then mode = Settings_Mode_M1 end
+
+                    if mode == "TOGGLE" then
+                        isActive = not isActive
+                        if isActive then
                             btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                            task.spawn(function()
-                                -- Tambahkan pengecekan ActiveVirtualKeys agar loop mati jika tombol dihapus
-                                while isAutoJumping and ActiveVirtualKeys["Jump"] do
-                                    local jumpBtn = GetJumpButton()
-                                    if jumpBtn then
-                                        local absPos = jumpBtn.AbsolutePosition
-                                        local absSize = jumpBtn.AbsoluteSize
-                                        local finalX = absPos.X + (absSize.X / 2) + Jump_Offset.X
-                                        local finalY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
-                                        
-                                        VIM:SendTouchEvent(5, 0, finalX, finalY)
-                                        task.wait(0.02)
-                                        VIM:SendTouchEvent(5, 2, finalX, finalY)
-                                    end
-                                    task.wait(0.1) -- Sudah benar 0.1s
-                                end
-                                -- Reset visual jika loop berhenti
-                                if ActiveVirtualKeys["Jump"] then
-                                    ActiveVirtualKeys["Jump"].Button.BackgroundColor3 = Color3.new(0,0,0)
-                                    ActiveVirtualKeys["Jump"].Button.TextColor3 = Theme.Accent
-                                end
-                            end)
+                            if id == "Jump" then StartSpamLogic(DoJump)
+                            elseif id == "Dodge" then StartSpamLogic(TriggerDodge)
+                            elseif id == "M1" then StartSpamLogic(TapM1) end
                         else
                             btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                         end
                     else
                         -- MODE HOLD
-                        isAutoJumping = true
+                        isHolding = true
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                        task.spawn(function()
-                            -- TAMBAHKAN ActiveVirtualKeys["Jump"] di sini untuk mencegah ghosting
-                            while isAutoJumping and isFingerDown and ActiveVirtualKeys["Jump"] do
-                                local jumpBtn = GetJumpButton()
-                                if jumpBtn then
-                                    local absPos = jumpBtn.AbsolutePosition
-                                    local absSize = jumpBtn.AbsoluteSize
-                                    local finalX = absPos.X + (absSize.X / 2) + Jump_Offset.X
-                                    local finalY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
-                                    
-                                    VIM:SendTouchEvent(5, 0, finalX, finalY)
-                                    task.wait(0.02)
-                                    VIM:SendTouchEvent(5, 2, finalX, finalY)
-                                    if not isFingerDown then break end 
-                                    task.wait(0.15)
-                                end
-                                StopAction()
-                            end
-                        end)
+                        if id == "Jump" then StartSpamLogic(DoJump)
+                        elseif id == "Dodge" then StartSpamLogic(TriggerDodge)
+                        elseif id == "M1" then StartSpamLogic(TapM1) end
                     end
                     return
                 end
 
-                -- [[ D. WEAPON SWAP ]]
-                if isWeaponKey then
-                    equipWeapon(slotIdx, true)
-                    -- [PERBAIKAN] Tidak ada perubahan warna visual untuk tombol 1-4
-                    return
-                end
-                
-                -- [[ E. SKILL LOGIC ]]
+                -- C. SKILL (Z, X, C, V, F)
                 if isSkillKey then
                     if slotIdx and not isWeaponReady(slotIdx) then
-                        equipWeapon(slotIdx, false)
-                        task.wait(0.1) 
+                        equipWeapon(slotIdx, false); task.wait(0.05)
                     end
 
                     if SkillMode == "INSTANT" then
-                        -- [INSTANT MODE]
-                        -- 1. Tidak ubah warna (Tetap Hitam/Transparan)
-                        -- 2. Support HOLD (Touch Down)
-                        isHoldingInstant = true
-                        pressKey(kn) -- Klik UI
+                        -- [INSTANT MODE] Tahan = Tahan Skill
+                        pressKey(kn) -- Visual game
                         
+                        -- FORCE Warna Hitam (Sesuai Request)
+                        btn.BackgroundColor3 = Color3.new(0,0,0) 
+                        btn.TextColor3 = Theme.Accent
+
                         local vp = Camera.ViewportSize
-                        local x = (vp.X / 2) + M1_Offset.X
-                        local y = (vp.Y / 2) + M1_Offset.Y
+                        local x, y = (vp.X/2) + M1_Offset.X, (vp.Y/2) + M1_Offset.Y
                         
-                        task.wait(0.02)
+                        -- Kirim Touch Down (Tahan)
                         VIM:SendTouchEvent(myTouchID, 0, x, y)
-                        
                     else 
-                        -- [SMART MODE]
-                        -- 1. Ubah warna jadi Orange/Emas (Theme.Accent)
-                        -- 2. Hanya PressKey (Tanpa VIM Touch)
+                        -- [SMART MODE] (Sudah Benar)
                         pressKey(kn) 
-                        CurrentSmartKeyData = vData
-                        SmartTouchObject = input 
-                        
-                        btn.BackgroundColor3 = Theme.Accent -- Orange/Emas
-                        btn.TextColor3 = Color3.new(0,0,0)
+                        CurrentSmartKeyData = vData; SmartTouchObject = input 
+                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     end
                 end
             end
         end)
 
+        -- [4] EVENT SAAT DILEPAS
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                if id == "M1" and Settings_Mode_M1 == "HOLD" then
-                    IsAutoM1_Active = false
-                    btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
-                end
-
-                if id == "Dodge" and Settings_Mode_Dash == "HOLD" then 
-                    IsAutoDashing = false 
-                    btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
-                end
+                -- Matikan Mode Hold (Jump/Dodge/M1)
+                isHolding = false 
                 
-                if id == "Jump" and Settings_Mode_Jump == "HOLD" then
-                    isAutoJumping = false
+                -- Lepas Skill Instant
+                if isSkillKey and SkillMode == "INSTANT" then
+                    local vp = Camera.ViewportSize
+                    local x, y = (vp.X/2) + M1_Offset.X, (vp.Y/2) + M1_Offset.Y
+                    
+                    -- Kirim Touch Up (Lepas)
+                    VIM:SendTouchEvent(myTouchID, 2, x, y)
+                    
+                    -- Reset Warna
+                    btn.BackgroundColor3 = Color3.new(0,0,0)
+                    btn.TextColor3 = Theme.Accent
+                    
+                elseif SkillMode == "SMART" then
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                    if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then CurrentSmartKeyData = nil end
                 end
-                
-                if isSkillKey then
-                    if SkillMode == "INSTANT" then
-                        if isHoldingInstant then
-                            isHoldingInstant = false
-                            
-                            local vp = Camera.ViewportSize
-                            local x = (vp.X / 2) + M1_Offset.X
-                            local y = (vp.Y / 2) + M1_Offset.Y
-                            
-                            -- 1. LEPAS NORMAL
-                            VIM:SendTouchEvent(myTouchID, 2, x, y)
-                            task.delay(0.05, function()
-                                VIM:SendTouchEvent(myTouchID, 2, x, y)
-                            end)
-                            
-                            -- 2. VALIDASI WARNA & PAKSA LEPAS (ANTI-STUCK)
-                            task.spawn(function()
-                                local targetBtn = GetMobileButtonObj(kn)
-                                local CYAN_COLOR = Color3.fromRGB(0, 255, 255) 
-                                
-                                task.wait(0.1) 
-                                
-                                if targetBtn then
-                                    local safetyCount = 0
-                                    -- Cek jika warna masih Cyan (0, 255, 255) -> Berarti Nyangkut
-                                    while targetBtn.BackgroundColor3 == CYAN_COLOR and safetyCount < 10 do
-                                        -- Lakukan PressKey lagi untuk melepas paksa
-                                        pressKey(kn) 
-                                        VIM:SendTouchEvent(5, 2, x, y)
-                                        safetyCount = safetyCount + 1
-                                        task.wait(0.05) 
-                                    end
-                                end
-                            end)
-                            
-                            -- Pastikan warna kembali ke Hitam (Default)
-                            btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                            btn.TextColor3 = Theme.Accent
-                        end
-                        
-                    elseif SkillMode == "SMART" then
-                        -- Reset warna Smart Mode (Orange -> Hitam)
-                        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                        btn.TextColor3 = Theme.Accent
-                        if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
-                            CurrentSmartKeyData = nil
-                        end
-                    end
-                end
-            end
-        end)
-        -- [TAMBAHAN BARU] Deteksi jika jari keluar dari tombol (Tergelincir)
-        btn.MouseLeave:Connect(function()
-            -- Jika sedang menahan Jump atau Skill, lalu jari keluar -> Matikan Paksa!
-            if (id == "Jump" and Settings_Mode_Jump == "HOLD") or 
-               (isSkillKey and SkillMode == "INSTANT") then
-               
-               StopAction() -- Panggil fungsi rem darurat tadi
             end
         end)
         
-        -- [UPDATE JUGA] Di InputEnded, panggil StopAction() juga biar rapi
-        btn.InputEnded:Connect(function(input)
-             -- ... (Cek input type) ...
-             StopAction() -- Ganti logika reset manual Anda dengan fungsi ini
+        -- [5] SAFETY: Jari Tergelincir (MouseLeave)
+        -- Sederhana saja: Jika jari keluar tombol, matikan hold.
+        btn.MouseLeave:Connect(function()
+            isHolding = false
+            if isSkillKey and SkillMode == "INSTANT" then
+                local vp = Camera.ViewportSize
+                local x, y = (vp.X/2) + M1_Offset.X, (vp.Y/2) + M1_Offset.Y
+                VIM:SendTouchEvent(myTouchID, 2, x, y) -- Pastikan skill lepas
+                btn.BackgroundColor3 = Color3.new(0,0,0)
+            end
         end)
         
         ActiveVirtualKeys[id] = vData
