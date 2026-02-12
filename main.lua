@@ -45,9 +45,12 @@ local DEADZONE = 0.15
 local isRunning = false 
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
+local IsAutoLoad = true
 local Settings_Mode_M1 = "HOLD" 
 local Settings_Mode_Dash = "HOLD" 
 local Settings_Mode_Jump = "HOLD" 
+local Jump_Offset = Vector2.new(0, 0) 
+local JumpCrosshairUI = nil
 local IsAutoM1_Active = false 
 local M1_Offset = Vector2.new(0, 0) 
 local ShowCrosshair = false 
@@ -74,6 +77,12 @@ local UpdateTransparencyFunc = nil
 local RefreshEditorUI = nil 
 local CreateComboButtonFunc = nil 
 local ModeBtn = nil 
+
+-- Tambahkan variable ini di Section [1] agar Load Function bisa membacanya
+local SetM1Btn = nil
+local SetDashBtn = nil
+local SetJumpBtn = nil
+local AutoLoadBtn = nil
 
 local WeaponData = {
     {name = "Melee", slot = 1, color = Color3.fromRGB(255, 140, 0), tooltip = "Melee", keys = {"Z", "X", "C"}},
@@ -988,17 +997,12 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                                     if jumpBtn then
                                         local absPos = jumpBtn.AbsolutePosition
                                         local absSize = jumpBtn.AbsoluteSize
-                                        local midX = absPos.X + (absSize.X / 2) + M1_Offset.X
-                                        local midY = absPos.Y + (absSize.Y / 2) + M1_Offset.Y
                                         
-                                        local spreadX = absSize.X * 0.4
-                                        local spreadY = absSize.Y * 0.4
-                                        local randomX = math.random(-spreadX, spreadX)
-                                        local randomY = math.random(-spreadY, spreadY)
+                                        -- Hitung Titik Tengah + Offset Kalibrasi
+                                        local finalX = absPos.X + (absSize.X / 2) + Jump_Offset.X
+                                        local finalY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
                                         
-                                        local finalX = midX + randomX
-                                        local finalY = midY + randomY
-                                        
+                                        -- Tekan Tepat di Titik Tersebut (Tanpa Random)
                                         VIM:SendTouchEvent(5, 0, finalX, finalY)
                                         task.wait(0.05)
                                         VIM:SendTouchEvent(5, 2, finalX, finalY)
@@ -1014,6 +1018,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                         end
                     else
+                        -- MODE HOLD
                         isAutoJumping = true
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         task.spawn(function()
@@ -1022,17 +1027,12 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                                 if jumpBtn then
                                     local absPos = jumpBtn.AbsolutePosition
                                     local absSize = jumpBtn.AbsoluteSize
-                                    local midX = absPos.X + (absSize.X / 2) + M1_Offset.X
-                                    local midY = absPos.Y + (absSize.Y / 2) + M1_Offset.Y
                                     
-                                    local spreadX = absSize.X * 0.4
-                                    local spreadY = absSize.Y * 0.4
-                                    local randomX = math.random(-spreadX, spreadX)
-                                    local randomY = math.random(-spreadY, spreadY)
+                                    -- Hitung Titik Tengah + Offset Kalibrasi
+                                    local finalX = absPos.X + (absSize.X / 2) + Jump_Offset.X
+                                    local finalY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
                                     
-                                    local finalX = midX + randomX
-                                    local finalY = midY + randomY
-                                    
+                                    -- Tekan Tepat di Titik Tersebut
                                     VIM:SendTouchEvent(5, 0, finalX, finalY)
                                     task.wait(0.05)
                                     VIM:SendTouchEvent(5, 2, finalX, finalY)
@@ -1181,19 +1181,20 @@ CreateComboButtonFunc = function(idx, loadedSteps)
 end
 
 -- ==============================================================================
--- [9] LAYOUT SETTINGS TAB
+-- [9] LAYOUT SETTINGS TAB (CLEAN & COMPACT)
 -- ==============================================================================
-local LayPad = Instance.new("UIPadding"); LayPad.Parent=P_Lay; LayPad.PaddingLeft=UDim.new(0,10); LayPad.PaddingRight=UDim.new(0,10); LayPad.PaddingTop=UDim.new(0,15); LayPad.PaddingBottom=UDim.new(0,50)
-local LayList = Instance.new("UIListLayout"); LayList.Parent=P_Lay; LayList.Padding=UDim.new(0, 15); LayList.SortOrder="LayoutOrder"; LayList.HorizontalAlignment="Center"
-LayList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() P_Lay.CanvasSize = UDim2.new(0, 0, 0, LayList.AbsoluteContentSize.Y + 60) end)
+local LayPad = Instance.new("UIPadding"); LayPad.Parent=P_Lay; LayPad.PaddingLeft=UDim.new(0,10); LayPad.PaddingRight=UDim.new(0,10); LayPad.PaddingTop=UDim.new(0,10); LayPad.PaddingBottom=UDim.new(0,20)
+local LayList = Instance.new("UIListLayout"); LayList.Parent=P_Lay; LayList.Padding=UDim.new(0, 8); LayList.SortOrder="LayoutOrder"; LayList.HorizontalAlignment="Center" -- Padding diperkecil jadi 8
+LayList:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() P_Lay.CanvasSize = UDim2.new(0, 0, 0, LayList.AbsoluteContentSize.Y + 30) end)
 
 local function mkSection(title, order)
-    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 0, 20); l.Text = title; l.TextColor3 = Theme.SubText; l.Font = Enum.Font.GothamBold; l.TextSize = 11; l.TextXAlignment = "Left"; l.BackgroundTransparency = 1; l.LayoutOrder = order; l.Parent = P_Lay; return l
+    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 0, 18); l.Text = title; l.TextColor3 = Theme.SubText; l.Font = Enum.Font.GothamBold; l.TextSize = 10; l.TextXAlignment = "Left"; l.BackgroundTransparency = 1; l.LayoutOrder = order; l.Parent = P_Lay; return l
 end
 
-mkSection("GENERAL SETTINGS", 1)
+-- [[ 1. GENERAL TOOLS ]]
+mkSection("GENERAL TOOLS", 1)
 local SetBox = Instance.new("Frame"); SetBox.Size = UDim2.new(1, 0, 0, 0); SetBox.AutomaticSize = Enum.AutomaticSize.Y; SetBox.BackgroundTransparency = 1; SetBox.LayoutOrder = 2; SetBox.Parent = P_Lay
-local Grid1 = Instance.new("UIGridLayout"); Grid1.Parent=SetBox; Grid1.CellSize = UDim2.new(0.48, 0, 0, 35); Grid1.CellPadding = UDim2.new(0.04, 0, 0.04, 0)
+local Grid1 = Instance.new("UIGridLayout"); Grid1.Parent=SetBox; Grid1.CellSize = UDim2.new(0.48, 0, 0, 32); Grid1.CellPadding = UDim2.new(0.04, 0, 0.04, 0) -- Tinggi tombol diperkecil jadi 32
 
 LockBtn = mkTool("POS: UNLOCKED", Theme.Green, function() IsLayoutLocked=not IsLayoutLocked; updateLockState() end, SetBox)
 local JoyToggle = mkTool("JOYSTICK: OFF", Theme.Red, nil, SetBox)
@@ -1201,31 +1202,29 @@ JoyToggle.MouseButton1Click:Connect(function() IsJoystickEnabled = not IsJoystic
 mkTool("ADD COMBO", Theme.Accent, function() local idx = #Combos + 1; CreateComboButtonFunc(idx, nil) end, SetBox)
 mkTool("DEL COMBO", Theme.Red, function() if #Combos<1 then return end; Combos[CurrentComboIndex].Button:Destroy(); table.remove(Combos, CurrentComboIndex); if #Combos > 0 then CurrentComboIndex=math.min(CurrentComboIndex, #Combos) else CurrentComboIndex=0 end; if ResizerUpdateFunc then ResizerUpdateFunc() end; RefreshEditorUI(); ShowNotification("Combo Deleted", Theme.Red); end, SetBox)
 
-ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
-    if SkillMode == "INSTANT" then SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
-    else SkillMode = "INSTANT"; ModeBtn.Text = "MODE: INSTANT"; ModeBtn.BackgroundColor3 = Theme.Green; CurrentSmartKeyData=nil; SelectedComboID=nil end 
-end, SetBox)
-
-local TransContainer = Instance.new("Frame"); TransContainer.Size = UDim2.new(1, 0, 0, 30); TransContainer.BackgroundTransparency = 1; TransContainer.LayoutOrder = 3; TransContainer.Parent = P_Lay
-local TLbl = Instance.new("TextLabel"); TLbl.Size=UDim2.new(0.4,0,1,0); TLbl.Text="TRANSPARENCY"; TLbl.TextColor3=Theme.SubText; TLbl.Font=Enum.Font.GothamBold; TLbl.TextSize=10; TLbl.TextXAlignment="Left"; TLbl.BackgroundTransparency=1; TLbl.Parent=TransContainer
+-- [[ 2. TRANSPARENCY ]]
+local TransContainer = Instance.new("Frame"); TransContainer.Size = UDim2.new(1, 0, 0, 25); TransContainer.BackgroundTransparency = 1; TransContainer.LayoutOrder = 3; TransContainer.Parent = P_Lay
+local TLbl = Instance.new("TextLabel"); TLbl.Size=UDim2.new(0.4,0,1,0); TLbl.Text="UI TRANSPARENCY"; TLbl.TextColor3=Theme.SubText; TLbl.Font=Enum.Font.GothamBold; TLbl.TextSize=10; TLbl.TextXAlignment="Left"; TLbl.BackgroundTransparency=1; TLbl.Parent=TransContainer
 local TBg = Instance.new("Frame"); TBg.Size=UDim2.new(0.55,0,0,4); TBg.Position=UDim2.new(0.42,0,0.5,-2); TBg.BackgroundColor3=Theme.Stroke; TBg.Parent=TransContainer; createCorner(TBg,2)
-local TKnob = Instance.new("TextButton"); TKnob.Size=UDim2.new(0,12,0,12); TKnob.Position=UDim2.new(0,0,0.5,-6); TKnob.BackgroundColor3=Theme.Accent; TKnob.Text=""; TKnob.Parent=TBg; TKnob.Selectable=false; createCorner(TKnob,6)
-local dragT=false; TKnob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragT=true end end); TrackConn(UserInputService.InputChanged:Connect(function(i) if dragT and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local p=math.clamp((i.Position.X-TBg.AbsolutePosition.X)/TBg.AbsoluteSize.X,0,1); TKnob.Position=UDim2.new(p,-6,0.5,-6); GlobalTransparency=p*0.9; UpdateTransparencyFunc() end end)); TrackConn(UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragT=false end end))
+local TKnob = Instance.new("TextButton"); TKnob.Size=UDim2.new(0,10,0,10); TKnob.Position=UDim2.new(0,0,0.5,-5); TKnob.BackgroundColor3=Theme.Accent; TKnob.Text=""; TKnob.Parent=TBg; TKnob.Selectable=false; createCorner(TKnob,6)
+local dragT=false; TKnob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragT=true end end); TrackConn(UserInputService.InputChanged:Connect(function(i) if dragT and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then local p=math.clamp((i.Position.X-TBg.AbsolutePosition.X)/TBg.AbsoluteSize.X,0,1); TKnob.Position=UDim2.new(p,-5,0.5,-5); GlobalTransparency=p*0.9; UpdateTransparencyFunc() end end)); TrackConn(UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragT=false end end))
 
-mkSection("QUICK KEYS (Tap to Toggle)", 4)
+-- [[ 3. QUICK KEYS ]]
+mkSection("QUICK KEYS (Tap to Show/Hide)", 4)
 local VKBox = Instance.new("Frame"); VKBox.Size = UDim2.new(1, 0, 0, 0); VKBox.AutomaticSize = Enum.AutomaticSize.Y; VKBox.BackgroundTransparency = 1; VKBox.LayoutOrder = 5; VKBox.Parent = P_Lay
-local Grid2 = Instance.new("UIGridLayout"); Grid2.Parent=VKBox; Grid2.CellSize = UDim2.new(0.18, 0, 0, 35); Grid2.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
+local Grid2 = Instance.new("UIGridLayout"); Grid2.Parent=VKBox; Grid2.CellSize = UDim2.new(0.18, 0, 0, 30); Grid2.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
 local keysList = {"1", "2", "3", "4", "Z", "X", "C", "V", "F", "M1", "Dodge", "Jump"}
 for _, k in ipairs(keysList) do
-    local btn = Instance.new("TextButton"); btn.Text=k; btn.BackgroundColor3=Theme.Element; btn.TextColor3=Theme.Text; btn.Font=Enum.Font.GothamBold; btn.TextSize=12; btn.Parent=VKBox; btn.Selectable=false; createCorner(btn,4)
+    local btn = Instance.new("TextButton"); btn.Text=k; btn.BackgroundColor3=Theme.Element; btn.TextColor3=Theme.Text; btn.Font=Enum.Font.GothamBold; btn.TextSize=11; btn.Parent=VKBox; btn.Selectable=false; createCorner(btn,4)
     btn.MouseButton1Click:Connect(function() toggleVirtualKey(k, nil, k) end); VirtualKeySelectors[k] = btn
 end
 
+-- [[ 4. WEAPON BIND ]]
 mkSection("CUSTOM WEAPON BIND", 6)
-local VKeyAddBox = Instance.new("Frame"); VKeyAddBox.Size = UDim2.new(1, 0, 0, 90); VKeyAddBox.BackgroundColor3 = Theme.Sidebar; VKeyAddBox.LayoutOrder = 7; VKeyAddBox.Parent = P_Lay; createCorner(VKeyAddBox, 6); local VKeyPad = Instance.new("UIPadding"); VKeyPad.Parent=VKeyAddBox; VKeyPad.PaddingTop=UDim.new(0,10); VKeyPad.PaddingLeft=UDim.new(0,10); VKeyPad.PaddingRight=UDim.new(0,10)
-local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.48,0,0,30); TypeBtn.Position=UDim2.new(0,0,0,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6); TypeBtn.Font=Enum.Font.GothamBold; TypeBtn.TextSize=11
-local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.48,0,0,30); KeyBtn.Position=UDim2.new(0.52,0,0,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6); KeyBtn.Font=Enum.Font.GothamBold; KeyBtn.TextSize=11
-local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(1,0,0,35); AddVKeyBtn.Position=UDim2.new(0,0,0,40); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6); AddVKeyBtn.TextSize=12
+local VKeyAddBox = Instance.new("Frame"); VKeyAddBox.Size = UDim2.new(1, 0, 0, 75); VKeyAddBox.BackgroundColor3 = Theme.Sidebar; VKeyAddBox.LayoutOrder = 7; VKeyAddBox.Parent = P_Lay; createCorner(VKeyAddBox, 6); local VKeyPad = Instance.new("UIPadding"); VKeyPad.Parent=VKeyAddBox; VKeyPad.PaddingTop=UDim.new(0,8); VKeyPad.PaddingLeft=UDim.new(0,8); VKeyPad.PaddingRight=UDim.new(0,8)
+local TypeBtn = Instance.new("TextButton"); TypeBtn.Size=UDim2.new(0.48,0,0,28); TypeBtn.Position=UDim2.new(0,0,0,0); TypeBtn.BackgroundColor3=Theme.Element; TypeBtn.Text="Melee"; TypeBtn.TextColor3=Theme.Text; TypeBtn.Parent=VKeyAddBox; createCorner(TypeBtn,6); TypeBtn.Font=Enum.Font.GothamBold; TypeBtn.TextSize=10
+local KeyBtn = Instance.new("TextButton"); KeyBtn.Size=UDim2.new(0.48,0,0,28); KeyBtn.Position=UDim2.new(0.52,0,0,0); KeyBtn.BackgroundColor3=Theme.Element; KeyBtn.Text="Z"; KeyBtn.TextColor3=Theme.Text; KeyBtn.Parent=VKeyAddBox; createCorner(KeyBtn,6); KeyBtn.Font=Enum.Font.GothamBold; KeyBtn.TextSize=10
+local AddVKeyBtn = Instance.new("TextButton"); AddVKeyBtn.Size=UDim2.new(1,0,0,28); AddVKeyBtn.Position=UDim2.new(0,0,0,35); AddVKeyBtn.BackgroundColor3=Theme.Green; AddVKeyBtn.Text="ADD BOUND KEY"; AddVKeyBtn.TextColor3=Theme.Bg; AddVKeyBtn.Font=Enum.Font.GothamBold; AddVKeyBtn.Parent=VKeyAddBox; createCorner(AddVKeyBtn,6); AddVKeyBtn.TextSize=11
 local selW, selK = "Melee", "Z"
 local SkillLimits = { ["Melee"] = {"Z", "X", "C"}, ["Fruit"] = {"Z", "X", "C", "V", "F"}, ["Sword"] = {"Z", "X"}, ["Gun"] = {"Z", "X"} }
 
@@ -1238,13 +1237,14 @@ KeyBtn.MouseButton1Click:Connect(function() local kList = SkillLimits[selW] or {
 AddVKeyBtn.MouseButton1Click:Connect(function() local slot = 1; for i,v in ipairs(WeaponData) do if v.name == selW then slot = i break end end; local id = selW .. " " .. selK; toggleVirtualKey(selK, slot, id); UpdateAddButtonState() end)
 UpdateAddButtonState()
 
+-- [[ 5. RESIZER ]]
 mkSection("RESIZER & VISIBILITY", 8)
-local AdvBox = Instance.new("Frame"); AdvBox.Size = UDim2.new(1, 0, 0, 110); AdvBox.BackgroundColor3 = Theme.Sidebar; AdvBox.LayoutOrder = 9; AdvBox.Parent = P_Lay; createCorner(AdvBox,6); local AdvPad = Instance.new("UIPadding"); AdvPad.Parent=AdvBox; AdvPad.PaddingTop=UDim.new(0,10); AdvPad.PaddingLeft=UDim.new(0,10); AdvPad.PaddingRight=UDim.new(0,10)
-local SelectBtn = Instance.new("TextButton"); SelectBtn.Size=UDim2.new(1,0,0,30); SelectBtn.Position=UDim2.new(0,0,0,0); SelectBtn.BackgroundColor3=Theme.Element; SelectBtn.Text="SELECT: NONE"; SelectBtn.TextColor3=Theme.Text; SelectBtn.Font=Enum.Font.GothamBold; SelectBtn.TextSize=11; SelectBtn.Parent=AdvBox; createCorner(SelectBtn,6)
-local SizeSlider = Instance.new("Frame"); SizeSlider.Size=UDim2.new(1,0,0,4); SizeSlider.Position=UDim2.new(0,0,0,50); SizeSlider.BackgroundColor3=Theme.Stroke; SizeSlider.Parent=AdvBox; createCorner(SizeSlider,2)
-local SizeKnob = Instance.new("TextButton"); SizeKnob.Size=UDim2.new(0,12,0,12); SizeKnob.Position=UDim2.new(0,-6,0.5,-6); SizeKnob.BackgroundColor3=Theme.Accent; SizeKnob.Text=""; SizeKnob.Parent=SizeSlider; SizeKnob.Selectable=false; createCorner(SizeKnob,6)
-local SizeLabel = Instance.new("TextLabel"); SizeLabel.Size=UDim2.new(1,0,0,15); SizeLabel.Position=UDim2.new(0,0,-4,0); SizeLabel.Text="SIZE: 0%"; SizeLabel.TextColor3=Theme.SubText; SizeLabel.Font=Enum.Font.Gotham; SizeLabel.TextSize=10; SizeLabel.BackgroundTransparency=1; SizeLabel.Parent=SizeSlider
-local VisBtn = Instance.new("TextButton"); VisBtn.Size=UDim2.new(1,0,0,30); VisBtn.Position=UDim2.new(0,0,0,60); VisBtn.BackgroundColor3=Theme.Green; VisBtn.Text="VISIBLE: ON"; VisBtn.TextColor3=Theme.Bg; VisBtn.Font=Enum.Font.GothamBold; VisBtn.TextSize=11; VisBtn.Parent=AdvBox; createCorner(VisBtn,6); VisBtn.Visible=false 
+local AdvBox = Instance.new("Frame"); AdvBox.Size = UDim2.new(1, 0, 0, 100); AdvBox.BackgroundColor3 = Theme.Sidebar; AdvBox.LayoutOrder = 9; AdvBox.Parent = P_Lay; createCorner(AdvBox,6); local AdvPad = Instance.new("UIPadding"); AdvPad.Parent=AdvBox; AdvPad.PaddingTop=UDim.new(0,8); AdvPad.PaddingLeft=UDim.new(0,8); AdvPad.PaddingRight=UDim.new(0,8)
+local SelectBtn = Instance.new("TextButton"); SelectBtn.Size=UDim2.new(1,0,0,28); SelectBtn.Position=UDim2.new(0,0,0,0); SelectBtn.BackgroundColor3=Theme.Element; SelectBtn.Text="SELECT: NONE"; SelectBtn.TextColor3=Theme.Text; SelectBtn.Font=Enum.Font.GothamBold; SelectBtn.TextSize=10; SelectBtn.Parent=AdvBox; createCorner(SelectBtn,6)
+local SizeSlider = Instance.new("Frame"); SizeSlider.Size=UDim2.new(1,0,0,4); SizeSlider.Position=UDim2.new(0,0,0,45); SizeSlider.BackgroundColor3=Theme.Stroke; SizeSlider.Parent=AdvBox; createCorner(SizeSlider,2)
+local SizeKnob = Instance.new("TextButton"); SizeKnob.Size=UDim2.new(0,10,0,10); SizeKnob.Position=UDim2.new(0,-5,0.5,-5); SizeKnob.BackgroundColor3=Theme.Accent; SizeKnob.Text=""; SizeKnob.Parent=SizeSlider; SizeKnob.Selectable=false; createCorner(SizeKnob,6)
+local SizeLabel = Instance.new("TextLabel"); SizeLabel.Size=UDim2.new(1,0,0,15); SizeLabel.Position=UDim2.new(0,0,-4,0); SizeLabel.Text="SIZE: 0%"; SizeLabel.TextColor3=Theme.SubText; SizeLabel.Font=Enum.Font.Gotham; SizeLabel.TextSize=9; SizeLabel.BackgroundTransparency=1; SizeLabel.Parent=SizeSlider
+local VisBtn = Instance.new("TextButton"); VisBtn.Size=UDim2.new(1,0,0,28); VisBtn.Position=UDim2.new(0,0,0,55); VisBtn.BackgroundColor3=Theme.Green; VisBtn.Text="VISIBLE: ON"; VisBtn.TextColor3=Theme.Bg; VisBtn.Font=Enum.Font.GothamBold; VisBtn.TextSize=10; VisBtn.Parent=AdvBox; createCorner(VisBtn,6); VisBtn.Visible=false 
 
 local ResizerIndex = 1
 ResizerUpdateFunc = function() 
@@ -1265,7 +1265,7 @@ SelectBtn.MouseButton1Click:Connect(function()
     ResizerUpdateFunc()
     local item = CurrentSelectedElement; local currentSize = item.Obj.Size.X.Offset; local p = 0.5
     if item.Type == "Joy" then p = (currentSize - 100) / 150 else p = (currentSize - 30) / 70 end
-    p = math.clamp(p, 0, 1); SizeKnob.Position = UDim2.new(p, -6, 0.5, -6); SizeLabel.Text = "SIZE: " .. math.floor(currentSize) .. "px" 
+    p = math.clamp(p, 0, 1); SizeKnob.Position = UDim2.new(p, -5, 0.5, -5); SizeLabel.Text = "SIZE: " .. math.floor(currentSize) .. "px" 
 end)
 
 VisBtn.MouseButton1Click:Connect(function() if CurrentSelectedElement then CurrentSelectedElement.Obj.Visible = not CurrentSelectedElement.Obj.Visible; ResizerUpdateFunc() end end)
@@ -1274,14 +1274,13 @@ local dragS = false
 SizeKnob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragS=true end end)
 TrackConn(UserInputService.InputChanged:Connect(function(i) 
     if dragS and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) and CurrentSelectedElement then 
-        local p = math.clamp((i.Position.X - SizeSlider.AbsolutePosition.X) / SizeSlider.AbsoluteSize.X, 0, 1); SizeKnob.Position = UDim2.new(p, -6, 0.5, -6); local newSize = 0
+        local p = math.clamp((i.Position.X - SizeSlider.AbsolutePosition.X) / SizeSlider.AbsoluteSize.X, 0, 1); SizeKnob.Position = UDim2.new(p, -5, 0.5, -5); local newSize = 0
         if CurrentSelectedElement.Type == "Joy" then newSize = 100 + (p * 150); CurrentSelectedElement.Obj.Size = UDim2.new(0, newSize, 0, newSize); JoyContainer.Size = UDim2.new(0, newSize, 0, newSize + 30); createCorner(CurrentSelectedElement.Obj, newSize) 
         else newSize = 30 + (p * 70); CurrentSelectedElement.Obj.Size = UDim2.new(0, newSize, 0, newSize); if CurrentSelectedElement.Name:find("C") then createCorner(CurrentSelectedElement.Obj, newSize/2) end end
         SizeLabel.Text = "SIZE: " .. math.floor(newSize) .. "px" 
     end 
 end))
 TrackConn(UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then dragS=false end end))
-
 -- ==============================================================================
 -- [10] COMBO EDITOR TAB
 -- ==============================================================================
@@ -1338,7 +1337,7 @@ local function GetCurrentState()
         if not obj then return {px=0, po=0, py=0, poy=0, sx=0, so=0, sy=0, soy=0} end
         return {px=obj.Position.X.Scale, po=obj.Position.X.Offset, py=obj.Position.Y.Scale, poy=obj.Position.Y.Offset, sx=obj.Size.X.Scale, so=obj.Size.X.Offset, sy=obj.Size.Y.Scale, soy=obj.Size.Y.Offset}
     end
-    local data = { Transparency = GlobalTransparency, JoystickEnabled = IsJoystickEnabled, SkillMode = SkillMode, LayoutLocked = IsLayoutLocked, Pos_Window = getLayout(Window), Pos_Toggle = getLayout(ToggleBtn), Pos_Joy = getLayout(JoyContainer), Pos_JoyOuter = getLayout(JoyOuter), Combos = {}, VirtualKeys = {}, M1_OffsetX = M1_Offset.X, M1_OffsetY = M1_Offset.Y, Settings_Mode_M1 = Settings_Mode_M1, Settings_Mode_Dash = Settings_Mode_Dash, Settings_Mode_Jump = Settings_Mode_Jump}
+    local data = { Transparency = GlobalTransparency, JoystickEnabled = IsJoystickEnabled, SkillMode = SkillMode, LayoutLocked = IsLayoutLocked, Pos_Window = getLayout(Window), Pos_Toggle = getLayout(ToggleBtn), Pos_Joy = getLayout(JoyContainer), Pos_JoyOuter = getLayout(JoyOuter), Combos = {}, VirtualKeys = {}, M1_OffsetX = M1_Offset.X, M1_OffsetY = M1_Offset.Y, Settings_Mode_M1 = Settings_Mode_M1, Settings_Mode_Dash = Settings_Mode_Dash, Settings_Mode_Jump = Settings_Mode_Jump, Jump_OffsetX = Jump_Offset.X, Jump_OffsetY = Jump_Offset.Y, AutoLoad = IsAutoLoad}
     for _, combo in ipairs(Combos) do if combo.Button then table.insert(data.Combos, {ID = combo.ID, Name = combo.Name, Steps = combo.Steps, Layout = getLayout(combo.Button)}) end end
     for id, vData in pairs(ActiveVirtualKeys) do if vData.Button then table.insert(data.VirtualKeys, {ID = id, KeyName = vData.KeyName, Slot = vData.Slot, Layout = getLayout(vData.Button)}) end end
     return data
@@ -1374,7 +1373,20 @@ local function LoadSpecific(configName)
         -- ====================================================
         -- [PERBAIKAN] LOGIKA SETTINGS DIPINDAHKAN KE SINI
         -- ====================================================
-        
+        if data.AutoLoad ~= nil then
+            IsAutoLoad = data.AutoLoad
+            if AutoLoadBtn then
+                if IsAutoLoad then
+                    AutoLoadBtn.Text = "AUTO LOAD: ON"
+                    AutoLoadBtn.BackgroundColor3 = Theme.Green
+                    AutoLoadBtn.TextColor3 = Theme.Bg
+                else
+                    AutoLoadBtn.Text = "AUTO LOAD: OFF"
+                    AutoLoadBtn.BackgroundColor3 = Theme.Red
+                    AutoLoadBtn.TextColor3 = Theme.Text
+                end
+            end
+        end
         -- Load Settings Mode M1
         if data.Settings_Mode_M1 then
             Settings_Mode_M1 = data.Settings_Mode_M1
@@ -1421,6 +1433,8 @@ local function LoadSpecific(configName)
                 end
             end
         end
+
+        
         
         -- ====================================================
         -- LANJUTAN LOGIKA LAINNYA
@@ -1435,6 +1449,10 @@ local function LoadSpecific(configName)
         if data.M1_OffsetX and data.M1_OffsetY then 
             M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
             UpdateCrosshairToVIM() 
+        end
+
+        if data.Jump_OffsetX and data.Jump_OffsetY then
+            Jump_Offset = Vector2.new(data.Jump_OffsetX, data.Jump_OffsetY)
         end
 
         GlobalTransparency = data.Transparency or 0
@@ -1518,6 +1536,13 @@ end
 -- ==============================================================================
 
 local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,10); SetList.HorizontalAlignment="Center"
+
+-- [HELPER] mkSection untuk Settings
+local function mkSetSection(title, order)
+    local l = Instance.new("TextLabel"); l.Size = UDim2.new(1, 0, 0, 18); l.Text = title; l.TextColor3 = Theme.SubText; l.Font = Enum.Font.GothamBold; l.TextSize = 10; l.TextXAlignment = "Left"; l.BackgroundTransparency = 1; l.LayoutOrder = order; l.Parent = P_Set; return l
+end
+
+-- [[ 1. M1 CALIBRATION (RED) ]]
 if CrosshairUI then CrosshairUI:Destroy() end 
 CrosshairUI = Instance.new("ImageButton"); CrosshairUI.Name = "M1_Crosshair"; CrosshairUI.Size = UDim2.new(0, 50, 0, 50); CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5); CrosshairUI.BackgroundTransparency = 1; CrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"; CrosshairUI.ImageColor3 = Theme.Red; CrosshairUI.Parent = ScreenGui; CrosshairUI.Visible = false; CrosshairUI.ZIndex = 9999
 local CH_V = Instance.new("Frame"); CH_V.Size=UDim2.new(0,2,1,0); CH_V.Position=UDim2.new(0.5,-1,0,0); CH_V.BackgroundColor3=Theme.Red; CH_V.Parent=CrosshairUI; CH_V.BorderSizePixel=0
@@ -1530,7 +1555,7 @@ CrosshairUI.InputBegan:Connect(function(input)
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 draggingCH = false; CrosshairUI.ImageColor3 = Theme.Red; CH_V.BackgroundColor3 = Theme.Red; CH_H.BackgroundColor3 = Theme.Red
-                pcall(function() for _, c in pairs(P_Set:GetChildren()) do if c:IsA("TextButton") and c.Text:find("CALIBRATION") then c.Text = "FINISH CALIBRATION" end end end)
+                pcall(function() for _, c in pairs(P_Set:GetChildren()) do if c:IsA("TextButton") and c.Text:find("M1 POSITION") then c.Text = "FINISH M1 CALIBRATION" end end end)
             end
         end)
     end
@@ -1541,105 +1566,132 @@ TrackConn(UserInputService.InputChanged:Connect(function(input)
         local vp = Camera.ViewportSize; M1_Offset = Vector2.new(input.Position.X - (vp.X / 2), input.Position.Y - (vp.Y / 2)); UpdateCrosshairToVIM()
     end
 end))
-TrackConn(Camera:GetPropertyChangedSignal("ViewportSize"):Connect(UpdateCrosshairToVIM))
+TrackConn(Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function() UpdateCrosshairToVIM() end))
 
-local CalibBtn = mkTool("CALIBRATE M1 POSITION (OFF)", Theme.Element, nil, P_Set); CalibBtn.Size = UDim2.new(0.9, 0, 0, 45)
+local CalibBtn = mkTool("CALIBRATE M1 POSITION (OFF)", Theme.Element, nil, P_Set); CalibBtn.Size = UDim2.new(0.9, 0, 0, 40)
 CalibBtn.MouseButton1Click:Connect(function()
     local isVisible = not CrosshairUI.Visible; CrosshairUI.Visible = isVisible
-    if isVisible then UpdateCrosshairToVIM(); CalibBtn.BackgroundColor3 = Theme.Red; CalibBtn.TextColor3 = Theme.Bg; CalibBtn.Text = "FINISH CALIBRATION"; ShowNotification("Drag Crosshair to Aim Point", Theme.Accent)
-    else CalibBtn.Text = "CALIBRATE M1 POSITION (OFF)"; CalibBtn.BackgroundColor3 = Theme.Element; CalibBtn.TextColor3 = Theme.Text; ShowNotification("Position Saved!", Theme.Green) end
+    if isVisible then UpdateCrosshairToVIM(); CalibBtn.BackgroundColor3 = Theme.Red; CalibBtn.TextColor3 = Theme.Bg; CalibBtn.Text = "FINISH M1 CALIBRATION"; ShowNotification("Drag RED Crosshair to Aim Point", Theme.Accent)
+    else CalibBtn.Text = "CALIBRATE M1 POSITION (OFF)"; CalibBtn.BackgroundColor3 = Theme.Element; CalibBtn.TextColor3 = Theme.Text; ShowNotification("M1 Position Saved!", Theme.Green) end
 end)
-local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(0.9, 0, 0, 40); InfoLbl.Text = "The Red Crosshair shows EXACTLY where the script will tap."; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.TextWrapped = true; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 11; InfoLbl.Parent = P_Set
-UpdateCrosshairToVIM()
 
--- ... (Di bawah kode InfoLbl Kalibrasi) ...
+-- [[ 2. JUMP CALIBRATION (BLUE) ]]
+if JumpCrosshairUI then JumpCrosshairUI:Destroy() end 
+JumpCrosshairUI = Instance.new("ImageButton")
+JumpCrosshairUI.Name = "Jump_Crosshair"
+JumpCrosshairUI.Size = UDim2.new(0, 60, 0, 60)
+JumpCrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5)
+JumpCrosshairUI.BackgroundTransparency = 1
+JumpCrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"
+JumpCrosshairUI.ImageColor3 = Theme.Blue 
+JumpCrosshairUI.Parent = ScreenGui
+JumpCrosshairUI.Visible = false
+JumpCrosshairUI.ZIndex = 9999
 
-mkSection("AUTO BUTTON MODE", 10)
--- [UBAH SIZE MENJADI 130 AGAR MUAT 3 TOMBOL]
-local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 130); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 11; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
-local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,10); AutoPad.PaddingLeft=UDim.new(0,10); AutoPad.PaddingRight=UDim.new(0,10)
+local function UpdateJumpVisual()
+    if not JumpCrosshairUI.Visible then return end
+    local jBtn = GetJumpButton()
+    if jBtn then
+        local absPos = jBtn.AbsolutePosition
+        local absSize = jBtn.AbsoluteSize
+        local targetX = absPos.X + (absSize.X / 2) + Jump_Offset.X
+        local targetY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
+        JumpCrosshairUI.Position = UDim2.new(0, targetX, 0, targetY)
+    end
+end
+TrackConn(RunService.RenderStepped:Connect(UpdateJumpVisual))
 
--- Tombol Setting M1
-local SetM1Btn = Instance.new("TextButton")
-SetM1Btn.Size = UDim2.new(1, 0, 0, 30)
-SetM1Btn.BackgroundColor3 = Theme.Element
-SetM1Btn.Text = "AUTO M1: HOLD MODE"
-SetM1Btn.TextColor3 = Theme.SubText
-SetM1Btn.Font = Enum.Font.GothamBold
-SetM1Btn.TextSize = 11
-SetM1Btn.Parent = AutoBox
-createCorner(SetM1Btn, 6)
+local draggingJump, dragInputJump
+JumpCrosshairUI.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingJump = true
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then draggingJump = false end end)
+    end
+end)
+JumpCrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputJump = input end end)
+TrackConn(UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputJump and draggingJump then
+        local jBtn = GetJumpButton()
+        if jBtn then
+            local absPos = jBtn.AbsolutePosition
+            local absSize = jBtn.AbsoluteSize
+            local defaultCenterX = absPos.X + (absSize.X / 2)
+            local defaultCenterY = absPos.Y + (absSize.Y / 2)
+            Jump_Offset = Vector2.new(input.Position.X - defaultCenterX, input.Position.Y - defaultCenterY)
+            UpdateJumpVisual()
+        end
+    end
+end))
 
+local CalibJumpBtn = mkTool("CALIBRATE JUMP (OFF)", Theme.Element, nil, P_Set); CalibJumpBtn.Size = UDim2.new(0.9, 0, 0, 40)
+CalibJumpBtn.MouseButton1Click:Connect(function()
+    local isVisible = not JumpCrosshairUI.Visible; JumpCrosshairUI.Visible = isVisible
+    if isVisible then 
+        CalibJumpBtn.BackgroundColor3 = Theme.Blue; CalibJumpBtn.TextColor3 = Theme.Bg; CalibJumpBtn.Text = "FINISH JUMP CALIBRATION"
+        ShowNotification("Drag BLUE Target to Adjust Jump", Theme.Blue)
+        UpdateJumpVisual()
+    else 
+        CalibJumpBtn.Text = "CALIBRATE JUMP (OFF)"; CalibJumpBtn.BackgroundColor3 = Theme.Element; CalibJumpBtn.TextColor3 = Theme.Text
+        ShowNotification("Jump Position Saved!", Theme.Green) 
+    end
+end)
+
+local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(0.9, 0, 0, 20); InfoLbl.Text = "RED = M1 Aim | BLUE = Jump Position"; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.TextWrapped = true; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 10; InfoLbl.Parent = P_Set
+
+-- [[ 3. SKILL EXECUTION MODE (PINDAHAN DARI LAYOUT) ]]
+mkSetSection("SKILL EXECUTION MODE", 10)
+local ModeContainer = Instance.new("Frame"); ModeContainer.Size = UDim2.new(0.9, 0, 0, 40); ModeContainer.BackgroundTransparency = 1; ModeContainer.Parent = P_Set
+ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
+    if SkillMode == "INSTANT" then 
+        SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
+    else 
+        SkillMode = "INSTANT"; ModeBtn.Text = "MODE: INSTANT"; ModeBtn.BackgroundColor3 = Theme.Green; CurrentSmartKeyData=nil; SelectedComboID=nil 
+    end 
+end, ModeContainer)
+ModeBtn.Size = UDim2.new(1, 0, 1, 0)
+
+-- [[ 4. AUTO BUTTON MODE ]]
+mkSetSection("AUTO BUTTON SETTINGS", 12)
+local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 110); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
+local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,8); AutoPad.PaddingLeft=UDim.new(0,8); AutoPad.PaddingRight=UDim.new(0,8)
+
+SetM1Btn = Instance.new("TextButton"); SetM1Btn.Size = UDim2.new(1, 0, 0, 28); SetM1Btn.BackgroundColor3 = Theme.Element; SetM1Btn.Text = "AUTO M1: HOLD MODE"; SetM1Btn.TextColor3 = Theme.SubText; SetM1Btn.Font = Enum.Font.GothamBold; SetM1Btn.TextSize = 10; SetM1Btn.Parent = AutoBox; createCorner(SetM1Btn, 6)
 SetM1Btn.MouseButton1Click:Connect(function()
-    if Settings_Mode_M1 == "HOLD" then
-        Settings_Mode_M1 = "TOGGLE"
-        SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"
-        SetM1Btn.BackgroundColor3 = Theme.Blue
-        SetM1Btn.TextColor3 = Theme.Bg
-    else
-        Settings_Mode_M1 = "HOLD"
-        SetM1Btn.Text = "AUTO M1: HOLD MODE"
-        SetM1Btn.BackgroundColor3 = Theme.Element
-        SetM1Btn.TextColor3 = Theme.SubText
-        IsAutoM1_Active = false 
-    end
+    if Settings_Mode_M1 == "HOLD" then Settings_Mode_M1 = "TOGGLE"; SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"; SetM1Btn.BackgroundColor3 = Theme.Blue; SetM1Btn.TextColor3 = Theme.Bg
+    else Settings_Mode_M1 = "HOLD"; SetM1Btn.Text = "AUTO M1: HOLD MODE"; SetM1Btn.BackgroundColor3 = Theme.Element; SetM1Btn.TextColor3 = Theme.SubText; IsAutoM1_Active = false end
 end)
 
--- Tombol Setting Dash
-local SetDashBtn = Instance.new("TextButton")
-SetDashBtn.Size = UDim2.new(1, 0, 0, 30)
-SetDashBtn.Position = UDim2.new(0, 0, 0, 40)
-SetDashBtn.BackgroundColor3 = Theme.Element
-SetDashBtn.Text = "AUTO DASH: HOLD MODE"
-SetDashBtn.TextColor3 = Theme.SubText
-SetDashBtn.Font = Enum.Font.GothamBold
-SetDashBtn.TextSize = 11
-SetDashBtn.Parent = AutoBox
-createCorner(SetDashBtn, 6)
-
+SetDashBtn = Instance.new("TextButton"); SetDashBtn.Size = UDim2.new(1, 0, 0, 28); SetDashBtn.Position = UDim2.new(0, 0, 0, 35); SetDashBtn.BackgroundColor3 = Theme.Element; SetDashBtn.Text = "AUTO DASH: HOLD MODE"; SetDashBtn.TextColor3 = Theme.SubText; SetDashBtn.Font = Enum.Font.GothamBold; SetDashBtn.TextSize = 10; SetDashBtn.Parent = AutoBox; createCorner(SetDashBtn, 6)
 SetDashBtn.MouseButton1Click:Connect(function()
-    if Settings_Mode_Dash == "HOLD" then
-        Settings_Mode_Dash = "TOGGLE"
-        SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"
-        SetDashBtn.BackgroundColor3 = Theme.Blue
-        SetDashBtn.TextColor3 = Theme.Bg
-    else
-        Settings_Mode_Dash = "HOLD"
-        SetDashBtn.Text = "AUTO DASH: HOLD MODE"
-        SetDashBtn.BackgroundColor3 = Theme.Element
-        SetDashBtn.TextColor3 = Theme.SubText
-        IsAutoDashing = false 
-    end
+    if Settings_Mode_Dash == "HOLD" then Settings_Mode_Dash = "TOGGLE"; SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"; SetDashBtn.BackgroundColor3 = Theme.Blue; SetDashBtn.TextColor3 = Theme.Bg
+    else Settings_Mode_Dash = "HOLD"; SetDashBtn.Text = "AUTO DASH: HOLD MODE"; SetDashBtn.BackgroundColor3 = Theme.Element; SetDashBtn.TextColor3 = Theme.SubText; IsAutoDashing = false end
 end)
 
--- [BARU] Tombol Setting Jump
-local SetJumpBtn = Instance.new("TextButton")
-SetJumpBtn.Size = UDim2.new(1, 0, 0, 30)
-SetJumpBtn.Position = UDim2.new(0, 0, 0, 80) -- Posisi di bawah Dash
-SetJumpBtn.BackgroundColor3 = Theme.Element
-SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"
-SetJumpBtn.TextColor3 = Theme.SubText
-SetJumpBtn.Font = Enum.Font.GothamBold
-SetJumpBtn.TextSize = 11
-SetJumpBtn.Parent = AutoBox
-createCorner(SetJumpBtn, 6)
-
+SetJumpBtn = Instance.new("TextButton"); SetJumpBtn.Size = UDim2.new(1, 0, 0, 28); SetJumpBtn.Position = UDim2.new(0, 0, 0, 70); SetJumpBtn.BackgroundColor3 = Theme.Element; SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"; SetJumpBtn.TextColor3 = Theme.SubText; SetJumpBtn.Font = Enum.Font.GothamBold; SetJumpBtn.TextSize = 10; SetJumpBtn.Parent = AutoBox; createCorner(SetJumpBtn, 6)
 SetJumpBtn.MouseButton1Click:Connect(function()
-    if Settings_Mode_Jump == "HOLD" then
-        Settings_Mode_Jump = "TOGGLE"
-        SetJumpBtn.Text = "AUTO JUMP: TOGGLE MODE (ON/OFF)"
-        SetJumpBtn.BackgroundColor3 = Theme.Blue
-        SetJumpBtn.TextColor3 = Theme.Bg
-    else
-        Settings_Mode_Jump = "HOLD"
-        SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"
-        SetJumpBtn.BackgroundColor3 = Theme.Element
-        SetJumpBtn.TextColor3 = Theme.SubText
-    end
+    if Settings_Mode_Jump == "HOLD" then Settings_Mode_Jump = "TOGGLE"; SetJumpBtn.Text = "AUTO JUMP: TOGGLE MODE (ON/OFF)"; SetJumpBtn.BackgroundColor3 = Theme.Blue; SetJumpBtn.TextColor3 = Theme.Bg
+    else Settings_Mode_Jump = "HOLD"; SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"; SetJumpBtn.BackgroundColor3 = Theme.Element; SetJumpBtn.TextColor3 = Theme.SubText end
 end)
+
+UpdateCrosshairToVIM()
 
 -- === SYSTEM TAB ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
+AutoLoadBtn = mkTool("AUTO LOAD: ON", Theme.Green, nil, P_Sys)
+AutoLoadBtn.Size = UDim2.new(0.9, 0, 0, 45)
+
+AutoLoadBtn.MouseButton1Click:Connect(function()
+    IsAutoLoad = not IsAutoLoad
+    if IsAutoLoad then
+        AutoLoadBtn.Text = "AUTO LOAD: ON"
+        AutoLoadBtn.BackgroundColor3 = Theme.Green
+        AutoLoadBtn.TextColor3 = Theme.Bg
+    else
+        AutoLoadBtn.Text = "AUTO LOAD: OFF"
+        AutoLoadBtn.BackgroundColor3 = Theme.Red
+        AutoLoadBtn.TextColor3 = Theme.Text
+    end
+end)
 local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function() 
     if CurrentConfigName then 
         ShowPopup("SAVE OPTIONS", function(c) 
@@ -1756,9 +1808,19 @@ task.spawn(function()
         local s, r = pcall(function() return readfile(FileName) end)
         if s and r ~= "" then 
             local success, data = pcall(function() return HttpService:JSONDecode(r) end)
-            if success and data and data["LastUsed"] and data[data["LastUsed"]] then 
-                LoadSpecific(data["LastUsed"]) 
-                CurrentConfigName = data["LastUsed"]
+            if success and data and data["LastUsed"] then
+                local lastConfigName = data["LastUsed"]
+                local lastData = data[lastConfigName]
+                
+                -- [LOGIKA BARU] Cek apakah AutoLoad aktif pada config terakhir
+                -- Jika nil (config lama), anggap True agar user tidak bingung
+                if lastData and (lastData.AutoLoad == true or lastData.AutoLoad == nil) then
+                    LoadSpecific(lastConfigName) 
+                    CurrentConfigName = lastConfigName
+                    ShowNotification("Auto-Loaded: " .. lastConfigName, Theme.Blue)
+                else
+                    ShowNotification("Auto-Load Disabled", Theme.Red)
+                end
             end 
         end 
     end
