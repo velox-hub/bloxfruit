@@ -773,9 +773,12 @@ end))
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
     local kn = tostring(keyName)
+    
+    -- Auto-detect slot jika input hanya angka (1-4)
     if not slotIdx then
         if kn == "1" then slotIdx = 1 elseif kn == "2" then slotIdx = 2 elseif kn == "3" then slotIdx = 3 elseif kn == "4" then slotIdx = 4 end
     end
+
     if ActiveVirtualKeys[id] then 
         if ActiveVirtualKeys[id].Button then ActiveVirtualKeys[id].Button:Destroy() end
         ActiveVirtualKeys[id]=nil
@@ -786,13 +789,18 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 50, 0, 50); btn.Position = UDim2.new(0.5, 0, 0.5, 0); btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); btn.Text = id; btn.TextColor3 = Theme.Accent; btn.Font = Enum.Font.GothamBold; btn.TextSize = 20; btn.TextScaled = true; btn.Parent = ScreenGui; btn.Selectable = false; btn.ZIndex = 60
         createCorner(btn, 12); createStroke(btn, Theme.Accent); MakeDraggable(btn, nil)
+        
         local vData = {ID=id, Slot=slotIdx, Button=btn, KeyName=kn}
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
+                
+                -- A. M1 Logic
                 if id == "M1" then TapM1() return end
+                
+                -- B. Dodge Logic
                 if id == "Dodge" then 
                     IsAutoDashing = true
                     btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
@@ -802,35 +810,54 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     end)
                     return 
                 end
+
+                -- C. Weapon Swap Logic (Langsung ganti senjata)
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
                     btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     task.delay(0.1, function() btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent end)
                     return
                 end
+                
+                -- D. Skill Logic (DENGAN PERBAIKAN PENGECEKAN SENJATA)
                 if isSkillKey then
+                    -- [FIX] Cek apakah tombol ini terikat dengan slot senjata tertentu?
+                    -- Jika ya, dan senjatanya belum dipegang, EQUIP DULU!
+                    if slotIdx and not isWeaponReady(slotIdx) then
+                        equipWeapon(slotIdx, false) -- false = jangan unequip (force equip)
+                        -- Beri jeda sedikit agar server memproses equip sebelum menekan skill
+                        task.wait(0.1) 
+                    end
+
+                    -- Setelah senjata benar, baru tekan skill
                     if SkillMode == "INSTANT" then
                         pressKey(kn)
                         task.wait(0.03)
                         local vp = Camera.ViewportSize
                         VIM:SendTouchEvent(5, 0, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
                         btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
-                    else pressKey(kn) end
+                    else 
+                        pressKey(kn) 
+                    end
                 end
             end
         end)
+
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 if id == "Dodge" then IsAutoDashing = false end
+                
                 if isSkillKey and SkillMode == "INSTANT" then
                     local vp = Camera.ViewportSize
                     VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
                 end
+                
                 if SkillMode ~= "SMART" and not isWeaponKey then
                     btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); btn.TextColor3 = Theme.Accent
                 end
             end
         end)
+        
         ActiveVirtualKeys[id] = vData
         if VirtualKeySelectors[id] then VirtualKeySelectors[id].BackgroundColor3=Theme.Green; VirtualKeySelectors[id].TextColor3=Theme.Bg end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end
@@ -1123,6 +1150,75 @@ local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function()
 end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
 
 local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local successDecode, all = pcall(function() return HttpService:JSONDecode(r) end); if successDecode and type(all) == "table" then for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local del = Instance.new("TextButton"); del.Size=UDim2.new(1,0,0,30); del.Position=UDim2.new(0,0,0,70); del.BackgroundColor3=Theme.Red; del.Text="DELETE"; del.TextColor3=Theme.Bg; del.Parent=c2; createCorner(del,6); del.ZIndex=2004; del.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+
+local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
+    ShowPopup("CONFIRM RESET?", function(c)
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
+        yes.MouseButton1Click:Connect(function()
+            -- 1. HAPUS SEMUA TOMBOL VIRTUAL
+            for _, vData in pairs(ActiveVirtualKeys) do
+                if vData.Button then vData.Button:Destroy() end
+            end
+            ActiveVirtualKeys = {}
+            
+            -- 2. HAPUS SEMUA COMBO
+            for _, c in pairs(Combos) do 
+                if c.Button then c.Button:Destroy() end 
+            end
+            Combos = {}
+            CurrentComboIndex = 0 
+            
+            -- 3. RESET VARIABLE SYSTEM
+            CurrentConfigName = nil
+            SkillMode = "INSTANT"
+            ModeBtn.Text = "MODE: INSTANT"
+            ModeBtn.BackgroundColor3 = Theme.Green
+            CurrentSmartKeyData = nil
+            SelectedComboID = nil
+            IsLayoutLocked = false
+            
+            -- 4. RESET VISUAL (Default Settings)
+            GlobalTransparency = 0
+            if TKnob then TKnob.Position = UDim2.new(0, -6, 0.5, -6) end
+            IsJoystickEnabled = false
+            JoyContainer.Visible = false
+            if JoyToggle then
+                JoyToggle.Text = "JOYSTICK: OFF"
+                JoyToggle.BackgroundColor3 = Theme.Red
+            end
+            
+            -- 5. RESET POSISI UI (Factory Default)
+            Window.Position = UDim2.new(0.5, -300, 0.5, -170)
+            ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
+            JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
+            
+            local defJoySize = 140
+            JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
+            JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
+            createCorner(JoyOuter, defJoySize)
+
+            -- 6. RESET PILIHAN WARNA TOMBOL
+            for k, btn in pairs(VirtualKeySelectors) do
+                btn.BackgroundColor3 = Theme.Element
+                btn.TextColor3 = Theme.Text
+            end
+
+            -- 7. REFRESH SEMUA
+            UpdateTransparencyFunc()
+            updateLockState()
+            if ResizerUpdateFunc then ResizerUpdateFunc() end
+            RefreshEditorUI() 
+
+            ShowNotification("Factory Reset Complete!", Theme.Accent)
+            ClosePopup()
+        end)
+        
+        no.MouseButton1Click:Connect(ClosePopup)
+        return 50
+    end)
+end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
 
 local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
     ShowPopup("CONFIRM EXIT?", function(c)
