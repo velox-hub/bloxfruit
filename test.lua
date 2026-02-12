@@ -943,10 +943,17 @@ end))
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
     local kn = tostring(keyName)
+
     
     if not slotIdx then
         if kn == "1" then slotIdx = 1 elseif kn == "2" then slotIdx = 2 elseif kn == "3" then slotIdx = 3 elseif kn == "4" then slotIdx = 4 end
     end
+
+    local myTouchID = 0
+    if id == "Jump" then myTouchID = 50
+    elseif id == "Dodge" then myTouchID = 51
+    elseif slotIdx then myTouchID = 10 + slotIdx 
+    else myTouchID = (string.byte(kn) % 20) + 20 end
 
     if ActiveVirtualKeys[id] then 
         if ActiveVirtualKeys[id].Button then ActiveVirtualKeys[id].Button:Destroy() end
@@ -966,10 +973,41 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         -- Variable Status
         local isHoldingInstant = false 
         local isAutoJumping = false
+        -- [TAMBAHAN BARU] Variabel untuk melacak apakah jari benar-benar nempel
+        local isFingerDown = false 
+
+        -- [TAMBAHAN BARU] Fungsi "Rem Darurat" untuk mematikan semua aksi
+        local function StopAction()
+            isFingerDown = false
+            isHoldingInstant = false
+            isAutoJumping = false
+            
+            -- Reset Warna Tombol
+            btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+            btn.TextColor3 = Theme.Accent
+
+            -- PAKSA LEPAS INPUT (VIM Release)
+            if id == "Jump" then
+                local jumpBtn = GetJumpButton()
+                if jumpBtn then
+                    local fx = jumpBtn.AbsolutePosition.X + (jumpBtn.AbsoluteSize.X / 2) + Jump_Offset.X
+                    local fy = jumpBtn.AbsolutePosition.Y + (jumpBtn.AbsoluteSize.Y / 2) + Jump_Offset.Y
+                    -- Kirim sinyal lepas (State 2)
+                    VIM:SendTouchEvent(myTouchID, 2, fx, fy) 
+                end
+            elseif isSkillKey and SkillMode == "INSTANT" then
+                local vp = Camera.ViewportSize
+                local x = (vp.X / 2) + M1_Offset.X
+                local y = (vp.Y / 2) + M1_Offset.Y
+                -- Kirim sinyal lepas 2 kali biar yakin
+                VIM:SendTouchEvent(myTouchID, 2, x, y)
+                task.delay(0.05, function() VIM:SendTouchEvent(myTouchID, 2, x, y) end)
+            end
+        end
         
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                
+                isFingerDown = true   
                 -- [[ A. LOGIKA M1 (AUTO CLICK) ]]
                 if id == "M1" then 
                     if Settings_Mode_M1 == "TOGGLE" then
@@ -1055,7 +1093,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         task.spawn(function()
                             -- TAMBAHKAN ActiveVirtualKeys["Jump"] di sini untuk mencegah ghosting
-                            while isAutoJumping and ActiveVirtualKeys["Jump"] do
+                            while isAutoJumping and isFingerDown and ActiveVirtualKeys["Jump"] do
                                 local jumpBtn = GetJumpButton()
                                 if jumpBtn then
                                     local absPos = jumpBtn.AbsolutePosition
@@ -1066,8 +1104,10 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                                     VIM:SendTouchEvent(5, 0, finalX, finalY)
                                     task.wait(0.02)
                                     VIM:SendTouchEvent(5, 2, finalX, finalY)
+                                    if not isFingerDown then break end 
+                                    task.wait(0.15)
                                 end
-                                task.wait(0.1) -- PERBAIKAN: Ubah dari 0.8 ke 0.1 agar cepat
+                                StopAction()
                             end
                         end)
                     end
@@ -1100,7 +1140,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         local y = (vp.Y / 2) + M1_Offset.Y
                         
                         task.wait(0.02)
-                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down (Tahan Skill)
+                        VIM:SendTouchEvent(myTouchID, 0, x, y)
                         
                     else 
                         -- [SMART MODE]
@@ -1145,7 +1185,10 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             local y = (vp.Y / 2) + M1_Offset.Y
                             
                             -- 1. LEPAS NORMAL
-                            VIM:SendTouchEvent(5, 2, x, y) 
+                            VIM:SendTouchEvent(myTouchID, 2, x, y)
+                            task.delay(0.05, function()
+                                VIM:SendTouchEvent(myTouchID, 2, x, y)
+                            end)
                             
                             -- 2. VALIDASI WARNA & PAKSA LEPAS (ANTI-STUCK)
                             task.spawn(function()
@@ -1182,6 +1225,21 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     end
                 end
             end
+        end)
+        -- [TAMBAHAN BARU] Deteksi jika jari keluar dari tombol (Tergelincir)
+        btn.MouseLeave:Connect(function()
+            -- Jika sedang menahan Jump atau Skill, lalu jari keluar -> Matikan Paksa!
+            if (id == "Jump" and Settings_Mode_Jump == "HOLD") or 
+               (isSkillKey and SkillMode == "INSTANT") then
+               
+               StopAction() -- Panggil fungsi rem darurat tadi
+            end
+        end)
+        
+        -- [UPDATE JUGA] Di InputEnded, panggil StopAction() juga biar rapi
+        btn.InputEnded:Connect(function(input)
+             -- ... (Cek input type) ...
+             StopAction() -- Ganti logika reset manual Anda dengan fungsi ini
         end)
         
         ActiveVirtualKeys[id] = vData
