@@ -774,7 +774,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
     local kn = tostring(keyName)
     
-    -- Auto-detect slot jika input hanya angka (1-4)
     if not slotIdx then
         if kn == "1" then slotIdx = 1 elseif kn == "2" then slotIdx = 2 elseif kn == "3" then slotIdx = 3 elseif kn == "4" then slotIdx = 4 end
     end
@@ -811,7 +810,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     return 
                 end
 
-                -- C. Weapon Swap Logic (Langsung ganti senjata)
+                -- C. Weapon Swap Logic
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
                     btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
@@ -819,24 +818,32 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     return
                 end
                 
-                -- D. Skill Logic (DENGAN PERBAIKAN PENGECEKAN SENJATA)
+                -- D. Skill Logic (PERBAIKAN DISINI)
                 if isSkillKey then
-                    -- [FIX] Cek apakah tombol ini terikat dengan slot senjata tertentu?
-                    -- Jika ya, dan senjatanya belum dipegang, EQUIP DULU!
+                    -- Cek Weapon Bind (Wajib equip senjata dulu jika di-bind)
                     if slotIdx and not isWeaponReady(slotIdx) then
-                        equipWeapon(slotIdx, false) -- false = jangan unequip (force equip)
-                        -- Beri jeda sedikit agar server memproses equip sebelum menekan skill
+                        equipWeapon(slotIdx, false)
                         task.wait(0.1) 
                     end
 
-                    -- Setelah senjata benar, baru tekan skill
                     if SkillMode == "INSTANT" then
+                        -- 1. Tekan Tombol Skill
                         pressKey(kn)
-                        task.wait(0.03)
+                        task.wait(0.03) 
+                        
+                        -- 2. Lakukan TAP Penuh (Down -> Wait -> Up) DISINI
+                        -- Agar tidak tertahan (stuck holding)
                         local vp = Camera.ViewportSize
-                        VIM:SendTouchEvent(5, 0, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
+                        local x = (vp.X / 2) + M1_Offset.X
+                        local y = (vp.Y / 2) + M1_Offset.Y
+                        
+                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
+                        task.wait(0.05)                -- Tahan sebentar
+                        VIM:SendTouchEvent(5, 2, x, y) -- Touch Up (PASTI LEPAS)
+                        
                         btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     else 
+                        -- Mode Lain (Hanya tekan skill UI)
                         pressKey(kn) 
                     end
                 end
@@ -847,10 +854,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 if id == "Dodge" then IsAutoDashing = false end
                 
-                if isSkillKey and SkillMode == "INSTANT" then
-                    local vp = Camera.ViewportSize
-                    VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
-                end
+                -- [PERBAIKAN] Hapus VIM Touch Up di sini untuk INSTANT Mode
+                -- Karena sudah kita handle full di InputBegan agar tidak bug
                 
                 if SkillMode ~= "SMART" and not isWeaponKey then
                     btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); btn.TextColor3 = Theme.Accent
