@@ -363,26 +363,37 @@ local function executeComboSequence(idx)
                 while CurrentSmartKeyData ~= nil and isRunning do
                     task.wait() -- Cek setiap frame
                 end
-            else 
-                while CurrentSmartKeyData ~= nil and isRunning do       
-                    if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                        -- Simulasi Tahan M1
-                        local vp = Camera.ViewportSize
-                        local x = (vp.X / 2) + M1_Offset.X
-                        local y = (vp.Y / 2) + M1_Offset.Y
-                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
-                        task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                        VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
-                    else
-                        -- Jika Mode Tap Biasa
-                        TapM1()
-                        task.wait(0.03)
-                        TapM1()
-                        task.wait(0.03)
-                        TapM1()
-                    end   
+            else     
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    -- Simulasi Tahan M1
+                    local vp = Camera.ViewportSize
+                    local x = (vp.X / 2) + M1_Offset.X
+                    local y = (vp.Y / 2) + M1_Offset.Y
+                    VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
+                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
+                    VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
+                else
+                    -- Jika Mode Tap Biasa
+                    TapM1()
+                    task.wait(0.03)
+                end   
+            end   
+            while CurrentSmartKeyData ~= nil and isRunning do
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    -- Simulasi Tahan M1
+                    local vp = Camera.ViewportSize
+                    local x = (vp.X / 2) + M1_Offset.X
+                    local y = (vp.Y / 2) + M1_Offset.Y
+                    VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
+                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
+                    VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
+                else
+                    -- Jika Mode Tap Biasa
+                    TapM1()
+                    task.wait(0.03)
                 end 
-            end       
+            end   
+            CurrentSmartKeyData = nil 
             -- [4] Jeda Antar Langkah
             task.wait(0.2)
         end
