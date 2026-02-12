@@ -47,6 +47,7 @@ local IsLayoutLocked = false
 local GlobalTransparency = 0 
 local Settings_Mode_M1 = "HOLD" 
 local Settings_Mode_Dash = "HOLD" 
+local Settings_Mode_Jump = "HOLD" 
 local IsAutoM1_Active = false 
 local M1_Offset = Vector2.new(0, 0) 
 local ShowCrosshair = false 
