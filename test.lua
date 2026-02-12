@@ -1398,14 +1398,40 @@ local function SaveToFile(configName, data)
 end
 
 -- ==============================================================================
--- TAB SETTINGS & CALIBRATION (REFINED LAYOUT)
+-- TAB SETTINGS & CALIBRATION (FIXED & SCROLLABLE)
 -- ==============================================================================
 
--- Padding & List Layout
-local SetPad = Instance.new("UIPadding"); SetPad.Parent=P_Set; SetPad.PaddingLeft=UDim.new(0,10); SetPad.PaddingRight=UDim.new(0,10); SetPad.PaddingTop=UDim.new(0,10); SetPad.PaddingBottom=UDim.new(0,20)
-local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,12); SetList.HorizontalAlignment="Center"; SetList.SortOrder="LayoutOrder"
+-- [[ 1. SETUP SCROLLING FRAME (Agar Rapi & Tidak Tembus) ]]
+-- Membersihkan isi lama jika ada reload
+for _, c in pairs(P_Set:GetChildren()) do c:Destroy() end
 
--- [HELPER] Section Title
+local SettingsScroll = Instance.new("ScrollingFrame")
+SettingsScroll.Name = "SettingsScroll"
+SettingsScroll.Size = UDim2.new(1, 0, 1, 0)
+SettingsScroll.BackgroundTransparency = 1
+SettingsScroll.BorderSizePixel = 0
+SettingsScroll.ScrollBarThickness = 4
+SettingsScroll.ScrollBarImageColor3 = Theme.Accent
+SettingsScroll.CanvasSize = UDim2.new(0, 0, 0, 0) -- Akan otomatis membesar
+SettingsScroll.AutomaticCanvasSize = Enum.AutomaticSize.Y -- Fitur otomatis Roblox
+SettingsScroll.ScrollingDirection = Enum.ScrollingDirection.Y
+SettingsScroll.ClipsDescendants = true -- Mencegah konten tembus keluar
+SettingsScroll.Parent = P_Set
+
+local SetPad = Instance.new("UIPadding")
+SetPad.PaddingLeft = UDim.new(0, 10)
+SetPad.PaddingRight = UDim.new(0, 10)
+SetPad.PaddingTop = UDim.new(0, 10)
+SetPad.PaddingBottom = UDim.new(0, 20)
+SetPad.Parent = SettingsScroll
+
+local SetList = Instance.new("UIListLayout")
+SetList.Padding = UDim.new(0, 12)
+SetList.HorizontalAlignment = Enum.HorizontalAlignment.Center
+SetList.SortOrder = Enum.SortOrder.LayoutOrder
+SetList.Parent = SettingsScroll
+
+-- [HELPER] Section Title Function
 local function mkSetSection(title, order)
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(1, 0, 0, 18)
@@ -1413,26 +1439,37 @@ local function mkSetSection(title, order)
     l.TextColor3 = Theme.SubText
     l.Font = Enum.Font.GothamBold
     l.TextSize = 10
-    l.TextXAlignment = "Left"
+    l.TextXAlignment = Enum.TextXAlignment.Left
     l.BackgroundTransparency = 1
     l.LayoutOrder = order
-    l.Parent = P_Set
+    l.Parent = SettingsScroll -- Masuk ke Scroll
     return l
 end
 
--- [[ 1. LOGIC CROSSHAIR M1 (RED) ]]
+-- [[ 2. LOGIC CROSSHAIR M1 (RED) ]]
 if CrosshairUI then CrosshairUI:Destroy() end 
-CrosshairUI = Instance.new("ImageButton"); CrosshairUI.Name = "M1_Crosshair"; CrosshairUI.Size = UDim2.new(0, 50, 0, 50); CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5); CrosshairUI.BackgroundTransparency = 1; CrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"; CrosshairUI.ImageColor3 = Theme.Red; CrosshairUI.Parent = ScreenGui; CrosshairUI.Visible = false; CrosshairUI.ZIndex = 9999
+CrosshairUI = Instance.new("ImageButton")
+CrosshairUI.Name = "M1_Crosshair"
+CrosshairUI.Size = UDim2.new(0, 50, 0, 50)
+CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5)
+CrosshairUI.BackgroundTransparency = 1
+-- Menggunakan asset ID blank atau crosshair transparan agar kita bisa pakai Frame custom
+CrosshairUI.Image = "" 
+CrosshairUI.Parent = ScreenGui
+CrosshairUI.Visible = false
+CrosshairUI.ZIndex = 9999
+
+-- Garis Visual M1
 local CH_V = Instance.new("Frame"); CH_V.Size=UDim2.new(0,2,1,0); CH_V.Position=UDim2.new(0.5,-1,0,0); CH_V.BackgroundColor3=Theme.Red; CH_V.Parent=CrosshairUI; CH_V.BorderSizePixel=0
 local CH_H = Instance.new("Frame"); CH_H.Size=UDim2.new(1,0,0,2); CH_H.Position=UDim2.new(0,0,0.5,-1); CH_H.BackgroundColor3=Theme.Red; CH_H.Parent=CrosshairUI; CH_H.BorderSizePixel=0
 
 local draggingCH, dragInputCH
 CrosshairUI.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        draggingCH = true; CrosshairUI.ImageColor3 = Theme.Green; CH_V.BackgroundColor3 = Theme.Green; CH_H.BackgroundColor3 = Theme.Green
+        draggingCH = true; CH_V.BackgroundColor3 = Theme.Green; CH_H.BackgroundColor3 = Theme.Green
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
-                draggingCH = false; CrosshairUI.ImageColor3 = Theme.Red; CH_V.BackgroundColor3 = Theme.Red; CH_H.BackgroundColor3 = Theme.Red
+                draggingCH = false; CH_V.BackgroundColor3 = Theme.Red; CH_H.BackgroundColor3 = Theme.Red
                 pcall(function() if CalibBtn then CalibBtn.Text = "FINISH" end end)
             end
         end)
@@ -1446,28 +1483,36 @@ TrackConn(UserInputService.InputChanged:Connect(function(input)
 end))
 TrackConn(Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function() UpdateCrosshairToVIM() end))
 
--- [[ 2. LOGIC CROSSHAIR JUMP (BLUE) ]]
+-- [[ 3. LOGIC CROSSHAIR JUMP (BLUE) - FIX VISIBILITY ]]
 if JumpCrosshairUI then JumpCrosshairUI:Destroy() end 
 JumpCrosshairUI = Instance.new("ImageButton")
 JumpCrosshairUI.Name = "Jump_Crosshair"
 JumpCrosshairUI.Size = UDim2.new(0, 60, 0, 60)
 JumpCrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5)
 JumpCrosshairUI.BackgroundTransparency = 1
-JumpCrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420"
-JumpCrosshairUI.ImageColor3 = Theme.Blue 
+JumpCrosshairUI.Image = "" -- Kosongkan image, kita pakai Frame garis
 JumpCrosshairUI.Parent = ScreenGui
 JumpCrosshairUI.Visible = false
 JumpCrosshairUI.ZIndex = 9999
 
+-- [PERBAIKAN] Menambahkan Garis Visual agar terlihat (seperti M1)
+local JCH_V = Instance.new("Frame"); JCH_V.Size=UDim2.new(0,2,1,0); JCH_V.Position=UDim2.new(0.5,-1,0,0); JCH_V.BackgroundColor3=Theme.Blue; JCH_V.Parent=JumpCrosshairUI; JCH_V.BorderSizePixel=0
+local JCH_H = Instance.new("Frame"); JCH_H.Size=UDim2.new(1,0,0,2); JCH_H.Position=UDim2.new(0,0,0.5,-1); JCH_H.BackgroundColor3=Theme.Blue; JCH_H.Parent=JumpCrosshairUI; JCH_H.BorderSizePixel=0
+
 local function UpdateJumpVisual()
     if not JumpCrosshairUI.Visible then return end
     local jBtn = GetJumpButton()
+    
     if jBtn then
         local absPos = jBtn.AbsolutePosition
         local absSize = jBtn.AbsoluteSize
         local targetX = absPos.X + (absSize.X / 2) + Jump_Offset.X
         local targetY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
         JumpCrosshairUI.Position = UDim2.new(0, targetX, 0, targetY)
+    else
+        -- Fallback jika tombol Jump tidak ketemu, taruh di tengah kanan
+        local vp = Camera.ViewportSize
+        JumpCrosshairUI.Position = UDim2.new(0, vp.X * 0.8, 0, vp.Y * 0.8)
     end
 end
 TrackConn(RunService.RenderStepped:Connect(UpdateJumpVisual))
@@ -1476,7 +1521,13 @@ local draggingJump, dragInputJump
 JumpCrosshairUI.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         draggingJump = true
-        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then draggingJump = false end end)
+        JCH_V.BackgroundColor3 = Theme.Green; JCH_H.BackgroundColor3 = Theme.Green -- Feedback Warna saat drag
+        input.Changed:Connect(function() 
+            if input.UserInputState == Enum.UserInputState.End then 
+                draggingJump = false 
+                JCH_V.BackgroundColor3 = Theme.Blue; JCH_H.BackgroundColor3 = Theme.Blue
+            end 
+        end)
     end
 end)
 JumpCrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputJump = input end end)
@@ -1490,18 +1541,22 @@ TrackConn(UserInputService.InputChanged:Connect(function(input)
             local defaultCenterY = absPos.Y + (absSize.Y / 2)
             Jump_Offset = Vector2.new(input.Position.X - defaultCenterX, input.Position.Y - defaultCenterY)
             UpdateJumpVisual()
+        else
+            -- Logic drag manual jika tombol asli tidak ada
+            Jump_Offset = Jump_Offset + input.Delta
+            JumpCrosshairUI.Position = UDim2.new(0, JumpCrosshairUI.Position.X.Offset + input.Delta.X, 0, JumpCrosshairUI.Position.Y.Offset + input.Delta.Y)
         end
     end
 end))
 
--- [[ 3. CALIBRATION UI (GRID LAYOUT) ]]
+-- [[ 4. CALIBRATION UI (GRID LAYOUT) ]]
 mkSetSection("TOUCH CALIBRATION", 1)
 
 local CalibBox = Instance.new("Frame")
 CalibBox.Size = UDim2.new(1, 0, 0, 40)
 CalibBox.BackgroundTransparency = 1
 CalibBox.LayoutOrder = 2
-CalibBox.Parent = P_Set
+CalibBox.Parent = SettingsScroll -- Masuk ke Scroll
 
 local CalibGrid = Instance.new("UIGridLayout")
 CalibGrid.Parent = CalibBox
@@ -1533,11 +1588,11 @@ CalibJumpBtn.MouseButton1Click:Connect(function()
     end
 end)
 
-local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(1, 0, 0, 15); InfoLbl.Text = "RED = M1 Aim  |  BLUE = Jump Position"; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 10; InfoLbl.LayoutOrder = 3; InfoLbl.Parent = P_Set
+local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(1, 0, 0, 15); InfoLbl.Text = "RED = M1 Aim  |  BLUE = Jump Position"; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 10; InfoLbl.LayoutOrder = 3; InfoLbl.Parent = SettingsScroll
 
--- [[ 4. SKILL EXECUTION MODE ]]
+-- [[ 5. SKILL EXECUTION MODE ]]
 mkSetSection("SKILL EXECUTION MODE", 4)
-local ModeContainer = Instance.new("Frame"); ModeContainer.Size = UDim2.new(1, 0, 0, 35); ModeContainer.BackgroundTransparency = 1; ModeContainer.LayoutOrder = 5; ModeContainer.Parent = P_Set
+local ModeContainer = Instance.new("Frame"); ModeContainer.Size = UDim2.new(1, 0, 0, 35); ModeContainer.BackgroundTransparency = 1; ModeContainer.LayoutOrder = 5; ModeContainer.Parent = SettingsScroll
 ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
     if SkillMode == "INSTANT" then 
         SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
@@ -1547,9 +1602,9 @@ ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function()
 end, ModeContainer)
 ModeBtn.Size = UDim2.new(1, 0, 1, 0)
 
--- [[ 5. AUTO BUTTON SETTINGS ]]
+-- [[ 6. AUTO BUTTON SETTINGS ]]
 mkSetSection("AUTO BUTTON SETTINGS", 6)
-local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 115); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 7; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
+local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 115); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 7; AutoBox.Parent = SettingsScroll; createCorner(AutoBox,6)
 local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,10); AutoPad.PaddingLeft=UDim.new(0,10); AutoPad.PaddingRight=UDim.new(0,10); AutoPad.PaddingBottom=UDim.new(0,10)
 local AutoList = Instance.new("UIListLayout"); AutoList.Parent=AutoBox; AutoList.Padding=UDim.new(0,8); AutoList.SortOrder="LayoutOrder"
 
@@ -1570,6 +1625,13 @@ SetJumpBtn = mkTool("AUTO JUMP: HOLD MODE", Theme.Element, function()
     else Settings_Mode_Jump = "HOLD"; SetJumpBtn.Text = "AUTO JUMP: HOLD MODE"; SetJumpBtn.BackgroundColor3 = Theme.Element; SetJumpBtn.TextColor3 = Theme.SubText end
 end, AutoBox)
 SetJumpBtn.Size = UDim2.new(1, 0, 0, 28)
+
+-- Spacer agar scroll tidak mentok bawah
+local Spacer = Instance.new("Frame")
+Spacer.Size = UDim2.new(1,0,0,20)
+Spacer.BackgroundTransparency = 1
+Spacer.LayoutOrder = 100
+Spacer.Parent = SettingsScroll
 
 UpdateCrosshairToVIM()
 
@@ -1875,24 +1937,36 @@ ShowNotification("Custom Layout: READY", Theme.Green)
 task.wait(1)
 ShowNotification("Mobile Engine: ONLINE", Theme.Blue)
 
+-- === STARTUP LOGIC (REVISED) ===
 task.spawn(function()
     task.wait(1.5) 
     if isfile(FileName) then 
-        local s, r = pcall(function() return readfile(FileName) end)
-        if s and r ~= "" then 
-            local success, data = pcall(function() return HttpService:JSONDecode(r) end)
-            if success and data and data["LastUsed"] then
+        local success, content = pcall(function() return readfile(FileName) end)
+        if success and content ~= "" then 
+            local decodeSuccess, data = pcall(function() return HttpService:JSONDecode(content) end)
+            
+            if decodeSuccess and data and data["LastUsed"] then
                 local lastConfigName = data["LastUsed"]
                 local lastData = data[lastConfigName]
                 
-                -- [LOGIKA BARU] Cek apakah AutoLoad aktif pada config terakhir
-                -- Jika nil (config lama), anggap True agar user tidak bingung
-                if lastData and (lastData.AutoLoad == true or lastData.AutoLoad == nil) then
+                -- CEK 1: Apakah di data permanen LastUsed ada flag AutoLoad?
+                -- CEK 2: Jika data AutoLoad tidak ditemukan (config lama), kita default ke TRUE
+                local shouldLoad = true
+                if lastData and lastData.AutoLoad ~= nil then
+                    shouldLoad = lastData.AutoLoad
+                end
+
+                if shouldLoad then
                     LoadSpecific(lastConfigName) 
                     CurrentConfigName = lastConfigName
-                    ShowNotification("Auto-Loaded: " .. lastConfigName, Theme.Blue)
+                    -- Pastikan tombol UI sinkron dengan data yang di-load
+                    IsAutoLoad = true 
+                    if AutoLoadBtn then
+                        AutoLoadBtn.Text = "AUTO LOAD: ON"
+                        AutoLoadBtn.BackgroundColor3 = Theme.Green
+                    end
                 else
-                    ShowNotification("Auto-Load Disabled", Theme.Red)
+                    ShowNotification("Auto-Load is Disabled", Theme.Red)
                 end
             end 
         end 
