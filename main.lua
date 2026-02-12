@@ -367,7 +367,7 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
-    -- Toggle Logic: Jika sedang jalan dan ditekan lagi -> STOP
+    -- [OPTIMASI 1] Toggle Logic Cepat
     if isRunning then 
         isRunning = false
         return 
@@ -387,15 +387,14 @@ local function executeComboSequence(idx)
         -- WARNA CYAN = Skill Sedang Equip/Ready/Charging
         local READY_COLOR = Color3.fromRGB(0, 255, 255)
         
-        -- Variable untuk melacak skill mana yang sedang aktif saat ini
-        -- Berguna jika tombol STOP ditekan di tengah jalan
-        local activeKey = nil 
+        -- Variable tracking
+        local CurrentActiveKey = nil
 
         for i, step in ipairs(data.Steps) do
-            -- Update Key yang sedang diproses
-            activeKey = step.Key
+            -- Update Key aktif
+            CurrentActiveKey = step.Key
 
-            -- [1] SAFETY STOP DI AWAL LANGKAH
+            -- [SAFETY STOP]
             if not isRunning then break end
             
             local char = LocalPlayer.Character
@@ -403,43 +402,36 @@ local function executeComboSequence(idx)
                 isRunning = false; break 
             end
             
-            -- [2] PERSIAPAN
+            -- [PERSIAPAN]
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
             
             if not isRunning then break end 
-            pressKey(step.Key) -- Tekan Skill UI
             
-            -- Wait super pendek (0.05s) dengan cek stop
+            -- Tekan Skill UI
+            pressKey(step.Key) 
+            
+            -- Wait pendek (Non-blocking wait)
             local t = tick()
-            while tick() - t < 0.05 do 
-                if not isRunning then break end 
-                task.wait() 
-            end
+            while tick() - t < 0.05 do if not isRunning then break end task.wait() end
             if not isRunning then break end 
 
-            -- [3] EKSEKUSI SERANGAN
+            -- [EKSEKUSI SERANGAN]
             if SkillMode == "SMART" and i == 1 then 
-                -- Manual Mode
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
             else 
-                -- Auto Mode
-                
-                -- A. START DELAY
+                -- START DELAY
                 if step.Delay and step.Delay > 0 then 
                     local endDelay = tick() + step.Delay
-                    while tick() < endDelay do 
-                        if not isRunning then break end 
-                        task.wait() 
-                    end
+                    while tick() < endDelay do if not isRunning then break end task.wait() end
                 end
                 
                 if not isRunning then break end
 
-                -- B. TOUCH DOWN (Mulai Tahan)
+                -- TOUCH DOWN (Start Charge)
                 VIM:SendTouchEvent(5, 0, x, y) 
                 
-                -- C. PROSES HOLDING
+                -- PROSES HOLDING
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     local endHold = tick() + step.HoldTime
                     while tick() < endHold do
@@ -450,16 +442,15 @@ local function executeComboSequence(idx)
                     task.wait(0.05) 
                 end
                 
-                -- D. TOUCH UP (Lepas Skill / Tembak)
+                -- TOUCH UP (Lepas)
                 VIM:SendTouchEvent(5, 2, x, y)
                 
-                -- Jika stop ditekan saat holding, break agar masuk ke Cleanup
                 if not isRunning then break end 
 
-                -- [4] VALIDASI WARNA (ANTI-SKIP NORMAL)
-                -- Ini logika anti-skip saat script berjalan normal
+                -- [VALIDASI WARNA - ANTI SKIP]
                 local targetBtn = GetMobileButtonObj(step.Key)
                 if targetBtn then
+                    -- Tunggu render UI sebentar
                     local waitRender = 0
                     while waitRender < 5 do
                         if not isRunning then break end
@@ -468,11 +459,13 @@ local function executeComboSequence(idx)
                         waitRender = waitRender + 1
                     end
                     
+                    -- Spam M1 jika skill nyangkut (Cyan)
                     local safetyCount = 0
                     while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
                         VIM:SendTouchEvent(5, 0, x, y)
                         task.wait(0.03) 
                         VIM:SendTouchEvent(5, 2, x, y)
+                        
                         safetyCount = safetyCount + 1
                         if safetyCount > 30 then break end
                         task.wait(0.05)
@@ -480,7 +473,7 @@ local function executeComboSequence(idx)
                 end
             end 
             
-            -- [5] Final Cleanup Langkah Ini
+            -- Cleanup Langkah Ini
             VIM:SendTouchEvent(5, 2, x, y)
             CurrentSmartKeyData = nil 
             
@@ -488,20 +481,27 @@ local function executeComboSequence(idx)
         end
         
         -- ==========================================================
-        -- [CLEANUP AKHIR - PENANGANAN STOP PAKSA]
+        -- [CLEANUP / EMERGENCY STOP - OPTIMIZED]
         -- ==========================================================
         
-        -- 1. Lepas Layar (Touch Up)
+        -- 1. Pastikan input sentuhan bersih
         VIM:SendTouchEvent(5, 2, x, y) 
 
-        -- 2. FORCE RESET UI BUTTON (Jika STOP ditekan saat tombol masih Cyan)
-        if not isRunning and activeKey then
-            local targetBtn = GetMobileButtonObj(activeKey)
+        -- 2. SMART FORCE RESET UI
+        -- Jika script berhenti dan tombol terakhir masih aktif (Cyan)
+        if CurrentActiveKey then
+            local targetBtn = GetMobileButtonObj(CurrentActiveKey)
             
-            -- Jika tombol masih ada DAN warnanya masih CYAN (Nyangkut)
             if targetBtn and targetBtn.BackgroundColor3 == READY_COLOR then
-                -- PAKSA RESET: Tekan tombol UI lagi
-                pressKey(activeKey)
+                -- [OPTIMASI] Lakukan retry ringan (maks 3x) untuk memastikan server menerima cancel
+                for _ = 1, 3 do
+                    if targetBtn.BackgroundColor3 ~= READY_COLOR then break end -- Sudah reset? berhenti.
+                    
+                    pressKey(CurrentActiveKey) -- Tekan UI (Cancel Charge)
+                    VIM:SendTouchEvent(5, 2, x, y) -- Lepas M1
+                    
+                    task.wait(0.05) -- Beri waktu server memproses
+                end
             end
         end
 
