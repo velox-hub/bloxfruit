@@ -367,7 +367,12 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
-    if isRunning then return end
+    -- Toggle Logic: Jika sedang jalan dan ditekan lagi -> STOP
+    if isRunning then 
+        isRunning = false
+        return 
+    end
+    
     isRunning = true
     
     local btn = data.Button
@@ -383,7 +388,7 @@ local function executeComboSequence(idx)
         local READY_COLOR = Color3.fromRGB(0, 255, 255)
 
         for i, step in ipairs(data.Steps) do
-            -- [1] SAFETY STOP AWAL
+            -- [1] SAFETY STOP DI AWAL LANGKAH
             if not isRunning then break end
             
             local char = LocalPlayer.Character
@@ -391,94 +396,94 @@ local function executeComboSequence(idx)
                 isRunning = false; break 
             end
             
-            -- [2] PERSIAPAN (Equip & Tekan Skill)
+            -- [2] PERSIAPAN
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
+            
+            if not isRunning then break end -- Cek lagi sebelum tekan skill
             pressKey(step.Key)
             
-            -- Wait super pendek (0.05s) agar game register tombol skill sebelum kita tekan M1
+            -- Wait super pendek (0.05s) dengan cek stop
             local t = tick()
-            while tick() - t < 0.05 do if not isRunning then break end task.wait() end
-            if not isRunning then break end
+            while tick() - t < 0.05 do 
+                if not isRunning then break end 
+                task.wait() 
+            end
+            if not isRunning then break end -- Break loop utama jika stop ditekan saat wait
 
-            -- [3] EKSEKUSI SERANGAN (LANGSUNG TEKAN, JANGAN NUNGGU WARNA)
+            -- [3] EKSEKUSI SERANGAN
             if SkillMode == "SMART" and i == 1 then 
                 -- Manual Mode
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
             else 
-                -- Auto Mode (Responsif)
+                -- Auto Mode
                 
-                -- A. START DELAY (Jika ada settingan delay dari user)
+                -- A. START DELAY
                 if step.Delay and step.Delay > 0 then 
                     local endDelay = tick() + step.Delay
-                    while tick() < endDelay do if not isRunning then break end task.wait() end
+                    while tick() < endDelay do 
+                        if not isRunning then break end 
+                        task.wait() 
+                    end
                 end
                 
-                if not isRunning then break end
+                if not isRunning then break end -- Penting: Jangan tekan skill jika sudah stop
 
-                -- B. TOUCH DOWN (Mulai Tahan/Charge Skill)
-                -- Kita lakukan ini SEGERA agar terasa responsif
+                -- B. TOUCH DOWN (Mulai Tahan)
                 VIM:SendTouchEvent(5, 0, x, y) 
                 
                 -- C. PROSES HOLDING
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     local endHold = tick() + step.HoldTime
                     while tick() < endHold do
-                        if not isRunning then break end 
+                        if not isRunning then break end -- Stop di tengah holding
                         task.wait()
                     end
                 else
-                    -- Jika Tap biasa, beri jeda dikit biar server baca input down
                     task.wait(0.05) 
                 end
                 
                 -- D. TOUCH UP (Lepas Skill / Tembak)
+                -- Kita panggil ini baik saat selesai normal MAUPUN saat di-stop paksa
                 VIM:SendTouchEvent(5, 2, x, y)
                 
-                -- [4] VALIDASI WARNA (ANTI-SKIP & CONFIRMATION)
-                -- Di sini kita pastikan skill benar-benar sudah keluar (Jadi Abu-abu/Hitam)
-                -- Jika masih Cyan, kita paksa keluar.
-                
-                if isRunning then
-                    local targetBtn = GetMobileButtonObj(step.Key)
-                    if targetBtn then
-                        -- Tunggu sebentar (max 0.15s) untuk melihat apakah warna berubah jadi Cyan
-                        -- (Game butuh waktu render UI).
-                        local waitRender = 0
-                        while waitRender < 5 do
-                            if targetBtn.BackgroundColor3 == READY_COLOR then break end
-                            task.wait(0.03)
-                            waitRender = waitRender + 1
-                        end
+                -- Jika stop ditekan saat holding, kita break di sini agar tidak masuk validasi spam
+                if not isRunning then break end 
+
+                -- [4] VALIDASI WARNA (ANTI-SKIP)
+                local targetBtn = GetMobileButtonObj(step.Key)
+                if targetBtn then
+                    local waitRender = 0
+                    while waitRender < 5 do
+                        if not isRunning then break end -- Stop saat nunggu warna
+                        if targetBtn.BackgroundColor3 == READY_COLOR then break end
+                        task.wait(0.03)
+                        waitRender = waitRender + 1
+                    end
+                    
+                    local safetyCount = 0
+                    while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
+                        -- Spam M1
+                        VIM:SendTouchEvent(5, 0, x, y)
+                        task.wait(0.03) 
+                        VIM:SendTouchEvent(5, 2, x, y)
                         
-                        -- LOOP PENYELAMAT:
-                        -- Jika warna MASIH CYAN (Berarti skill belum keluar/masih hold/nyangkut)
-                        local safetyCount = 0
-                        while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
-                            
-                            -- Spam M1 (Tekan -> Lepas Cepat)
-                            VIM:SendTouchEvent(5, 0, x, y)
-                            task.wait(0.03) 
-                            VIM:SendTouchEvent(5, 2, x, y)
-                            
-                            safetyCount = safetyCount + 1
-                            if safetyCount > 30 then break end -- Max 1.5 detik spam
-                            task.wait(0.05)
-                        end
+                        safetyCount = safetyCount + 1
+                        if safetyCount > 30 then break end
+                        task.wait(0.05)
                     end
                 end
             end 
             
-            -- [5] Final Cleanup Langkah
-            VIM:SendTouchEvent(5, 2, x, y) -- Lepas total
+            -- [5] Final Cleanup Langkah Ini
+            VIM:SendTouchEvent(5, 2, x, y)
             CurrentSmartKeyData = nil 
             
-            -- Jeda antar langkah (Bisa sangat cepat karena kita sudah validasi warna)
             if isRunning then task.wait(0.1) end
         end
         
-        -- [CLEANUP AKHIR] 
-        VIM:SendTouchEvent(5, 2, x, y)
+        -- [CLEANUP AKHIR - DIJALANKAN BAIK SUKSES MAUPUN STOP]
+        VIM:SendTouchEvent(5, 2, x, y) -- Pastikan sentuhan dilepas
         isRunning = false
         SelectedComboID = nil
         CurrentSmartKeyData = nil
