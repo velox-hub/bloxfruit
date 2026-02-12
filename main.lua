@@ -340,6 +340,10 @@ local function executeComboSequence(idx)
     if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Red end
     
     task.spawn(function()
+        local vp = Camera.ViewportSize
+        local x = (vp.X / 2) + M1_Offset.X
+        local y = (vp.Y / 2) + M1_Offset.Y
+
         for i, step in ipairs(data.Steps) do
             if not isRunning then break end
             
@@ -360,30 +364,14 @@ local function executeComboSequence(idx)
             -- [4] Delay Tambahan (Jika diatur di editor)
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end    
             if SkillMode == "SMART" and i == 1 then 
-                while CurrentSmartKeyData ~= nil and isRunning do
-                    task.wait() -- Cek setiap frame
+                while not IsSmartHolding and isRunning do
+                    task.wait() 
+                end
+                while IsSmartHolding and isRunning do
+                    task.wait() 
                 end
             else     
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    -- Simulasi Tahan M1
-                    local vp = Camera.ViewportSize
-                    local x = (vp.X / 2) + M1_Offset.X
-                    local y = (vp.Y / 2) + M1_Offset.Y
-                    VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
-                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                    VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
-                else
-                    -- Jika Mode Tap Biasa
-                    TapM1()
-                    task.wait(0.03)
-                end   
-            end   
-            while CurrentSmartKeyData ~= nil and isRunning do
-                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    -- Simulasi Tahan M1
-                    local vp = Camera.ViewportSize
-                    local x = (vp.X / 2) + M1_Offset.X
-                    local y = (vp.Y / 2) + M1_Offset.Y
                     VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
                     task.wait(step.HoldTime) -- Tahan sesuai setting UI
                     VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
@@ -392,17 +380,25 @@ local function executeComboSequence(idx)
                     TapM1()
                     task.wait(0.03)
                 end 
+                VIM:SendTouchEvent(5, 2, x, y) 
             end   
+            while CurrentSmartKeyData ~= nil and isRunning do
+                -- Kirim sinyal lepas HANYA jika ini Auto Mode (bukan manual)
+                if not (SkillMode == "SMART" and i == 1) then
+                    VIM:SendTouchEvent(5, 2, x, y)
+                end
+                task.wait(0.1)
+            end
             CurrentSmartKeyData = nil 
             -- [4] Jeda Antar Langkah
             task.wait(0.2)
         end
         
         -- [CLEANUP] 
-        local vp = Camera.ViewportSize
-        VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
+        VIM:SendTouchEvent(5, 2, x, y)
         isRunning = false
         SelectedComboID = nil
+        CurrentSmartKeyData = nil
         
         if btn then 
             btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
