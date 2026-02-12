@@ -91,6 +91,31 @@ local function createCorner(p, r)
     c.Parent = p 
 end
 
+local function GetJumpButton()
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    if not PGui then return nil end
+    
+    -- Coba cari di lokasi standar Roblox Mobile
+    local touchGui = PGui:FindFirstChild("TouchGui")
+    if touchGui and touchGui:FindFirstChild("TouchControlFrame") then
+        local btn = touchGui.TouchControlFrame:FindFirstChild("JumpButton")
+        if btn and btn.Visible then return btn end
+    end
+    
+    -- Jika tidak ketemu, cari recursive (untuk game custom)
+    local function findJump(parent)
+        for _, child in pairs(parent:GetChildren()) do
+            if child:IsA("GuiObject") and child.Visible and (child.Name == "JumpButton" or child.Name == "Jump") then
+                return child
+            end
+            local res = findJump(child)
+            if res then return res end
+        end
+    end
+    
+    return findJump(PGui)
+end
+
 local function createStroke(p, c) 
     local s = Instance.new("UIStroke")
     s.Color = c or Theme.Stroke
@@ -367,7 +392,7 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
-    -- [OPTIMASI 1] Toggle Logic Cepat
+    -- [OPTIMASI 1] Toggle Cepat
     if isRunning then 
         isRunning = false
         return 
@@ -383,20 +408,24 @@ local function executeComboSequence(idx)
         local vp = Camera.ViewportSize
         local x = (vp.X / 2) + M1_Offset.X
         local y = (vp.Y / 2) + M1_Offset.Y
-        
-        -- WARNA CYAN = Skill Sedang Equip/Ready/Charging
         local READY_COLOR = Color3.fromRGB(0, 255, 255)
-        
-        -- Variable tracking
         local CurrentActiveKey = nil
 
+        -- [HELPER] Fungsi Tunggu Pintar (Hemat CPU & Responsif)
+        local function SmartWait(duration)
+            local t = tick()
+            while (tick() - t) < duration do
+                if not isRunning then return false end
+                task.wait() -- Yield sebentar agar tidak freeze
+            end
+            return isRunning -- Mengembalikan true jika masih jalan, false jika stop
+        end
+
         for i, step in ipairs(data.Steps) do
-            -- Update Key aktif
+            -- [CHECK 1] Awal Langkah
+            if not isRunning then break end
             CurrentActiveKey = step.Key
 
-            -- [SAFETY STOP]
-            if not isRunning then break end
-            
             local char = LocalPlayer.Character
             if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
                 isRunning = false; break 
@@ -405,70 +434,60 @@ local function executeComboSequence(idx)
             -- [PERSIAPAN]
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
             
-            if not isRunning then break end 
-            
             -- Tekan Skill UI
             pressKey(step.Key) 
             
-            -- Wait pendek (Non-blocking wait)
-            local t = tick()
-            while tick() - t < 0.05 do if not isRunning then break end task.wait() end
-            if not isRunning then break end 
+            -- Tunggu render UI (0.05s) - Jika stop, langsung break
+            if not SmartWait(0.05) then break end
 
             -- [EKSEKUSI SERANGAN]
             if SkillMode == "SMART" and i == 1 then 
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
             else 
-                -- START DELAY
+                -- START DELAY (User defined)
                 if step.Delay and step.Delay > 0 then 
-                    local endDelay = tick() + step.Delay
-                    while tick() < endDelay do if not isRunning then break end task.wait() end
+                    if not SmartWait(step.Delay) then break end
                 end
-                
-                if not isRunning then break end
 
                 -- TOUCH DOWN (Start Charge)
                 VIM:SendTouchEvent(5, 0, x, y) 
                 
                 -- PROSES HOLDING
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    local endHold = tick() + step.HoldTime
-                    while tick() < endHold do
-                        if not isRunning then break end 
-                        task.wait()
-                    end
+                    if not SmartWait(step.HoldTime) then break end
                 else
-                    task.wait(0.05) 
+                    if not SmartWait(0.05) then break end -- Tap delay
                 end
                 
                 -- TOUCH UP (Lepas)
                 VIM:SendTouchEvent(5, 2, x, y)
                 
-                if not isRunning then break end 
-
                 -- [VALIDASI WARNA - ANTI SKIP]
-                local targetBtn = GetMobileButtonObj(step.Key)
-                if targetBtn then
-                    -- Tunggu render UI sebentar
-                    local waitRender = 0
-                    while waitRender < 5 do
-                        if not isRunning then break end
-                        if targetBtn.BackgroundColor3 == READY_COLOR then break end
-                        task.wait(0.03)
-                        waitRender = waitRender + 1
-                    end
-                    
-                    -- Spam M1 jika skill nyangkut (Cyan)
-                    local safetyCount = 0
-                    while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
-                        VIM:SendTouchEvent(5, 0, x, y)
-                        task.wait(0.03) 
-                        VIM:SendTouchEvent(5, 2, x, y)
+                -- Hanya dijalankan jika script masih running
+                if isRunning then
+                    local targetBtn = GetMobileButtonObj(step.Key)
+                    if targetBtn then
+                        -- Tunggu max 0.15s untuk melihat perubahan warna
+                        local waitRender = 0
+                        while waitRender < 5 do
+                            if not isRunning then break end
+                            if targetBtn.BackgroundColor3 == READY_COLOR then break end
+                            task.wait(0.03)
+                            waitRender = waitRender + 1
+                        end
                         
-                        safetyCount = safetyCount + 1
-                        if safetyCount > 30 then break end
-                        task.wait(0.05)
+                        -- Loop Spam jika nyangkut
+                        local safetyCount = 0
+                        while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
+                            VIM:SendTouchEvent(5, 0, x, y)
+                            task.wait(0.03) 
+                            VIM:SendTouchEvent(5, 2, x, y)
+                            
+                            safetyCount = safetyCount + 1
+                            if safetyCount > 30 then break end
+                            task.wait(0.05)
+                        end
                     end
                 end
             end 
@@ -477,7 +496,8 @@ local function executeComboSequence(idx)
             VIM:SendTouchEvent(5, 2, x, y)
             CurrentSmartKeyData = nil 
             
-            if isRunning then task.wait(0.1) end
+            -- Jeda antar skill (Responsif)
+            if not SmartWait(0.1) then break end
         end
         
         -- ==========================================================
@@ -487,20 +507,20 @@ local function executeComboSequence(idx)
         -- 1. Pastikan input sentuhan bersih
         VIM:SendTouchEvent(5, 2, x, y) 
 
-        -- 2. SMART FORCE RESET UI
-        -- Jika script berhenti dan tombol terakhir masih aktif (Cyan)
+        -- 2. SMART FORCE RESET UI (Hanya jika stop mendadak)
         if CurrentActiveKey then
             local targetBtn = GetMobileButtonObj(CurrentActiveKey)
             
+            -- Cek apakah skill terakhir masih nyangkut (Cyan)
             if targetBtn and targetBtn.BackgroundColor3 == READY_COLOR then
-                -- [OPTIMASI] Lakukan retry ringan (maks 3x) untuk memastikan server menerima cancel
+                -- Lakukan retry ringan (maks 3x)
                 for _ = 1, 3 do
-                    if targetBtn.BackgroundColor3 ~= READY_COLOR then break end -- Sudah reset? berhenti.
+                    if targetBtn.BackgroundColor3 ~= READY_COLOR then break end
                     
-                    pressKey(CurrentActiveKey) -- Tekan UI (Cancel Charge)
-                    VIM:SendTouchEvent(5, 2, x, y) -- Lepas M1
+                    pressKey(CurrentActiveKey)     -- Cancel Charge via UI
+                    VIM:SendTouchEvent(5, 2, x, y) -- Lepas M1 via VIM
                     
-                    task.wait(0.05) -- Beri waktu server memproses
+                    task.wait(0.05)
                 end
             end
         end
@@ -900,8 +920,11 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
-        -- Variable Status Hold
+        -- Variable Status Hold Instant
         local isHoldingInstant = false 
+        
+        -- [BARU] Variable Status Auto Jump
+        local isAutoJumping = false
         
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
@@ -954,13 +977,40 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     return 
                 end
 
-                -- [[ C. WEAPON SWAP ]]
+                -- [[ C. LOGIKA JUMP (BARU DITAMBAHKAN) ]]
+                if id == "Jump" then
+                    isAutoJumping = true
+                    btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                    
+                    task.spawn(function()
+                        while isAutoJumping do
+                            local jumpBtn = GetJumpButton() -- Pastikan fungsi ini ada di Utility
+                            if jumpBtn then
+                                -- Hitung Titik Tengah Tombol Jump Asli
+                                local absPos = jumpBtn.AbsolutePosition
+                                local absSize = jumpBtn.AbsoluteSize
+                                local centerX = absPos.X + (absSize.X / 2)
+                                local centerY = absPos.Y + (absSize.Y / 2)
+                                
+                                -- Tap Tombol Jump
+                                VIM:SendTouchEvent(5, 0, centerX, centerY)
+                                task.wait(0.05)
+                                VIM:SendTouchEvent(5, 2, centerX, centerY)
+                            end
+                            -- Interval 0.8 detik (Cocok untuk Bunny Hop)
+                            task.wait(0.8) 
+                        end
+                    end)
+                    return
+                end
+
+                -- [[ D. WEAPON SWAP ]]
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
                     return
                 end
                 
-                -- [[ D. SKILL LOGIC ]]
+                -- [[ E. SKILL LOGIC ]]
                 if isSkillKey then
                     if slotIdx and not isWeaponReady(slotIdx) then
                         equipWeapon(slotIdx, false)
@@ -1005,6 +1055,12 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                 end
                 
+                -- [[ MATIKAN JUMP ]]
+                if id == "Jump" then
+                    isAutoJumping = false
+                    btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                end
+                
                 if isSkillKey then
                     if SkillMode == "INSTANT" then
                         if isHoldingInstant then
@@ -1020,26 +1076,21 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             -- 2. VALIDASI WARNA & PAKSA LEPAS (ANTI-STUCK)
                             task.spawn(function()
                                 local targetBtn = GetMobileButtonObj(kn)
-                                local READY_COLOR = Color3.fromRGB(0, 255, 255) -- Warna Cyan
+                                local READY_COLOR = Color3.fromRGB(0, 255, 255) 
                                 
-                                -- Tunggu sebentar agar server memproses 'Lepas' yang pertama
                                 task.wait(0.1) 
                                 
                                 if targetBtn then
                                     local safetyCount = 0
-                                    -- Jika warna masih Cyan, berarti skill nyangkut!
                                     while targetBtn.BackgroundColor3 == READY_COLOR and safetyCount < 10 do
-                                        -- Lakukan 'pressKey' (klik UI) + TouchUp untuk memaksa reset
                                         pressKey(kn) 
                                         VIM:SendTouchEvent(5, 2, x, y)
-                                        
                                         safetyCount = safetyCount + 1
-                                        task.wait(0.05) -- Cek lagi dengan cepat
+                                        task.wait(0.05) 
                                     end
                                 end
                             end)
                             
-                            -- Reset Warna Tombol Script
                             btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                             btn.TextColor3 = Theme.Accent
                         end
@@ -1115,7 +1166,7 @@ local dragT=false; TKnob.InputBegan:Connect(function(i) if i.UserInputType==Enum
 mkSection("QUICK KEYS (Tap to Toggle)", 4)
 local VKBox = Instance.new("Frame"); VKBox.Size = UDim2.new(1, 0, 0, 0); VKBox.AutomaticSize = Enum.AutomaticSize.Y; VKBox.BackgroundTransparency = 1; VKBox.LayoutOrder = 5; VKBox.Parent = P_Lay
 local Grid2 = Instance.new("UIGridLayout"); Grid2.Parent=VKBox; Grid2.CellSize = UDim2.new(0.18, 0, 0, 35); Grid2.CellPadding = UDim2.new(0.02, 0, 0.02, 0)
-local keysList = {"1", "2", "3", "4", "Z", "X", "C", "V", "F", "M1", "Dodge"}
+local keysList = {"1", "2", "3", "4", "Z", "X", "C", "V", "F", "M1", "Dodge", "Jump"}
 for _, k in ipairs(keysList) do
     local btn = Instance.new("TextButton"); btn.Text=k; btn.BackgroundColor3=Theme.Element; btn.TextColor3=Theme.Text; btn.Font=Enum.Font.GothamBold; btn.TextSize=12; btn.Parent=VKBox; btn.Selectable=false; createCorner(btn,4)
     btn.MouseButton1Click:Connect(function() toggleVirtualKey(k, nil, k) end); VirtualKeySelectors[k] = btn
