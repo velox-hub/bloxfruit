@@ -237,6 +237,25 @@ local function TriggerDodge()
     end
 end
 
+-- Fungsi Cek Status Skill berdasarkan UI (Copy dari logika pressKey)
+-- Fungsi untuk mencari Objek Tombol Mobile di UI
+local function GetMobileButtonObj(keyName)
+    local PGui = LocalPlayer:FindFirstChild("PlayerGui")
+    local Skills = PGui and PGui:FindFirstChild("Main") and PGui.Main:FindFirstChild("Skills")
+    
+    if Skills then
+        for _, f in pairs(Skills:GetChildren()) do
+            if f:IsA("Frame") and f.Visible and f:FindFirstChild(keyName) then
+                local mobileBtn = f[keyName]:FindFirstChild("Mobile")
+                if mobileBtn then
+                    return mobileBtn
+                end
+            end
+        end
+    end
+    return nil
+end
+
 -- NOTIFICATION
 local NotifContainer = nil 
 local function ShowNotification(text, color)
@@ -344,6 +363,9 @@ local function executeComboSequence(idx)
         local x = (vp.X / 2) + M1_Offset.X
         local y = (vp.Y / 2) + M1_Offset.Y
 
+        -- DEFINISI WARNA: Indikator bahwa skill sedang "Siap/Aiming" dan butuh M1
+        local READY_COLOR = Color3.fromRGB(0, 255, 255)
+
         for i, step in ipairs(data.Steps) do
             if not isRunning then break end
             
@@ -352,49 +374,76 @@ local function executeComboSequence(idx)
                 isRunning = false; break 
             end
             
-            -- [1] Equip Senjata (Force Equip, bukan toggle)
+            -- [1] Equip Senjata
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
             
-            -- [2] Trigger Skill UI
+            -- [2] Trigger Skill UI (Tekan Z/X/C/V)
             pressKey(step.Key)
             
-            -- [3] Jeda Serang (Agar skill keluar sebelum M1)
-            task.wait(0.03)
+            -- Jeda minimal agar UI merespons perubahan warna
+            task.wait(0.05) 
             
-            -- [4] Delay Tambahan (Jika diatur di editor)
+            -- [3] DELAY SEBELUM M1 (Sesuai keinginan Anda untuk Aiming/Jeda)
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end    
+            
+            -- [4] EKSEKUSI SERANGAN
             if SkillMode == "SMART" and i == 1 then 
-                while not IsSmartHolding and isRunning do
-                    task.wait() 
-                end
-                while IsSmartHolding and isRunning do
-                    task.wait() 
-                end
-            else     
+                -- Mode Manual (Skill 1)
+                while not IsSmartHolding and isRunning do task.wait() end
+                while IsSmartHolding and isRunning do task.wait() end
+            else 
+                -- Mode Otomatis (Skill 2 dst)
+                
+                -- A. Eksekusi M1 Pertama
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
-                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
+                    task.wait(step.HoldTime)
                     VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
                 else
-                    -- Jika Mode Tap Biasa
-                    TapM1()
-                    task.wait(0.03)
+                    VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
+                    task.wait(0.05)
+                    VIM:SendTouchEvent(5, 2, x, y) -- [PERBAIKAN] Touch Up yang terlewat
                 end 
-                VIM:SendTouchEvent(5, 2, x, y) 
-            end   
-            while CurrentSmartKeyData ~= nil and isRunning do
-                -- Kirim sinyal lepas HANYA jika ini Auto Mode (bukan manual)
-                if not (SkillMode == "SMART" and i == 1) then
-                    VIM:SendTouchEvent(5, 2, x, y)
+                
+                -- B. LOGIKA ANTI-SKIP BERBASIS WARNA
+                local targetBtn = GetMobileButtonObj(step.Key)
+                
+                if targetBtn then
+                    local timeout = 0
+                    
+                    -- LOOP SPAM: Berjalan selama warna masih Cyan (Belum Keluar)
+                    while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
+                        
+                        if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                            VIM:SendTouchEvent(5, 0, x, y) 
+                            task.wait(step.HoldTime)
+                            VIM:SendTouchEvent(5, 2, x, y) 
+                        else
+                            VIM:SendTouchEvent(5, 0, x, y)
+                            task.wait(0.05)
+                            VIM:SendTouchEvent(5, 2, x, y)
+                        end
+                        
+                        -- [PERBAIKAN] Mengembalikan Safety Timeout
+                        -- Jika lebih dari 20 kali percobaan masih gagal, paksa lanjut agar tidak macet
+                        timeout = timeout + 1
+                        if timeout > 20 then break end
+                        
+                        task.wait(0.05) -- Jeda kecil sebelum spam M1 berikutnya
+                    end
+                else
+                    -- Fallback jika tombol tidak terbaca di layar
+                    task.wait(0.1)
                 end
-                task.wait(0.1)
-            end
+            end 
+            
+            -- [5] Cleanup Langkah Ini
+            VIM:SendTouchEvent(5, 2, x, y)
             CurrentSmartKeyData = nil 
-            -- [4] Jeda Antar Langkah
-            task.wait(0.2)
+            task.wait(0.1) 
         end
         
-        -- [CLEANUP] 
+        -- [CLEANUP AKHIR] 
         VIM:SendTouchEvent(5, 2, x, y)
         isRunning = false
         SelectedComboID = nil
@@ -1299,8 +1348,37 @@ NavNext.MouseButton1Click:Connect(function() if #Combos>1 then CurrentComboIndex
 -- [11] SAVE & LOAD IMPLEMENTATION
 -- ==============================================================================
 
+-- ==============================================================================
+-- [11] SAVE & LOAD IMPLEMENTATION (REVISI FINAL STABIL)
+-- ==============================================================================
+
+-- [FUNGSI BANTUAN] Didefinisikan DULUAN agar LoadSpecific bisa membacanya
+local function UpdateCrosshairToVIM()
+    if not CrosshairUI then return end
+    
+    local vp = Camera.ViewportSize
+    -- RUMUS VIM (INPUT SERANGAN)
+    local vimX = (vp.X / 2) + M1_Offset.X
+    local vimY = (vp.Y / 2) + M1_Offset.Y
+    
+    -- TERAPKAN KE UI
+    CrosshairUI.Position = UDim2.new(0, vimX, 0, vimY)
+    
+    -- Update Text Koordinat jika tombol ada
+    -- (Menggunakan pcall agar tidak error jika tombol belum ter-render)
+    pcall(function()
+        for _, c in pairs(P_Set:GetChildren()) do
+            if c:IsA("TextButton") and c.Text:find("X:") then
+                c.Text = "X: " .. math.floor(vimX) .. " | Y: " .. math.floor(vimY)
+            end
+        end
+    end)
+end
+
 local function GetCurrentState()
     local function getLayout(obj)
+        -- Pengaman jika objek sudah terhapus
+        if not obj then return {px=0, po=0, py=0, poy=0, sx=0, so=0, sy=0, soy=0} end
         return {
             px = obj.Position.X.Scale, po = obj.Position.X.Offset,
             py = obj.Position.Y.Scale, poy = obj.Position.Y.Offset,
@@ -1325,21 +1403,25 @@ local function GetCurrentState()
     }
 
     for _, combo in ipairs(Combos) do
-        table.insert(data.Combos, {
-            ID = combo.ID,
-            Name = combo.Name,
-            Steps = combo.Steps,
-            Layout = getLayout(combo.Button)
-        })
+        if combo.Button then
+            table.insert(data.Combos, {
+                ID = combo.ID,
+                Name = combo.Name,
+                Steps = combo.Steps,
+                Layout = getLayout(combo.Button)
+            })
+        end
     end
 
     for id, vData in pairs(ActiveVirtualKeys) do
-        table.insert(data.VirtualKeys, {
-            ID = id,
-            KeyName = vData.KeyName, -- Gunakan KeyName (misal "Z")
-            Slot = vData.Slot,
-            Layout = getLayout(vData.Button)
-        })
+        if vData.Button then
+            table.insert(data.VirtualKeys, {
+                ID = id,
+                KeyName = vData.KeyName,
+                Slot = vData.Slot,
+                Layout = getLayout(vData.Button)
+            })
+        end
     end
 
     return data
@@ -1348,7 +1430,11 @@ end
 local function SaveToFile(configName, data)
     local fullData = {}
     if isfile(FileName) then
-        local success, result = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
+        local success, result = pcall(function() 
+            local content = readfile(FileName)
+            if content == "" then return {} end
+            return HttpService:JSONDecode(content) 
+        end)
         if success and type(result) == "table" then fullData = result end
     end
     fullData[configName] = data
@@ -1357,13 +1443,18 @@ local function SaveToFile(configName, data)
     ShowNotification("Saved: " .. configName, Theme.Green)
 end
 
--- [PERBAIKAN] Load Function yang Lebih Aman
 local function LoadSpecific(configName)
     if not isfile(FileName) then return end
-    local success, fileData = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
-    if not success or not fileData[configName] then return end
     
-    -- Pcall wrapper untuk mencegah crash saat loading data corrupt
+    -- [SAFETY 1] Baca File dengan aman
+    local successRead, fileContent = pcall(function() return readfile(FileName) end)
+    if not successRead or fileContent == "" then return end
+
+    -- [SAFETY 2] Decode JSON dengan aman
+    local successDecode, fileData = pcall(function() return HttpService:JSONDecode(fileContent) end)
+    if not successDecode or type(fileData) ~= "table" or not fileData[configName] then return end
+    
+    -- [SAFETY 3] Terapkan Data dengan Error Handling
     local applySuccess, err = pcall(function()
         local data = fileData[configName]
         
@@ -1373,36 +1464,43 @@ local function LoadSpecific(configName)
             obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
         end
 
+        -- Load Offset & Crosshair
         if data.M1_OffsetX and data.M1_OffsetY then
             M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
+            -- Kita panggil update crosshair disini
             UpdateCrosshairToVIM()
         end
 
         GlobalTransparency = data.Transparency or 0
-        -- Update posisi slider knob
-        TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6)
+        if TKnob then 
+            TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6) 
+        end
         UpdateTransparencyFunc()
         
         IsLayoutLocked = data.LayoutLocked or false
         updateLockState()
 
         IsJoystickEnabled = data.JoystickEnabled or false
-        JoyContainer.Visible = IsJoystickEnabled
-        if IsJoystickEnabled then 
-            JoyToggle.Text = "JOYSTICK: ON"
-            JoyToggle.BackgroundColor3 = Theme.Green
-        else
-            JoyToggle.Text = "JOYSTICK: OFF"
-            JoyToggle.BackgroundColor3 = Theme.Red
+        if JoyContainer then JoyContainer.Visible = IsJoystickEnabled end
+        if JoyToggle then
+            if IsJoystickEnabled then 
+                JoyToggle.Text = "JOYSTICK: ON"
+                JoyToggle.BackgroundColor3 = Theme.Green
+            else
+                JoyToggle.Text = "JOYSTICK: OFF"
+                JoyToggle.BackgroundColor3 = Theme.Red
+            end
         end
 
         SkillMode = data.SkillMode or "INSTANT"
-        if SkillMode == "SMART" then 
-            ModeBtn.Text = "MODE: SMART TAP"
-            ModeBtn.BackgroundColor3 = Theme.Blue
-        else
-            ModeBtn.Text = "MODE: INSTANT"
-            ModeBtn.BackgroundColor3 = Theme.Green
+        if ModeBtn then
+            if SkillMode == "SMART" then 
+                ModeBtn.Text = "MODE: SMART TAP"
+                ModeBtn.BackgroundColor3 = Theme.Blue
+            else
+                ModeBtn.Text = "MODE: INSTANT"
+                ModeBtn.BackgroundColor3 = Theme.Green
+            end
         end
 
         if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
@@ -1410,8 +1508,7 @@ local function LoadSpecific(configName)
         if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
         if data.Pos_JoyOuter then 
             applyLayout(JoyOuter, data.Pos_JoyOuter)
-            local size = data.Pos_JoyOuter.so
-            createCorner(JoyOuter, size)
+            if data.Pos_JoyOuter.so then createCorner(JoyOuter, data.Pos_JoyOuter.so) end
         end
 
         -- Clear existing buttons safely
@@ -1432,7 +1529,6 @@ local function LoadSpecific(configName)
         
         if data.VirtualKeys and type(data.VirtualKeys) == "table" then
             for _, vData in ipairs(data.VirtualKeys) do
-                -- Pastikan keyname ada agar tidak error
                 if vData.KeyName then
                     toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
                     local createdKey = ActiveVirtualKeys[vData.ID]
@@ -1451,62 +1547,38 @@ local function LoadSpecific(configName)
         ShowNotification("Loaded: " .. configName, Theme.Blue)
     else
         warn("Velox Load Error: " .. tostring(err))
-        ShowNotification("Load Failed (Check Console)", Theme.Red)
+        ShowNotification("Load Partial/Error", Theme.Red)
     end
 end
 
 -- ==============================================================================
--- TAB SETTINGS  (REVISI: ABSOLUTE COORDINATE SYNC)
+-- TAB SETTINGS (REVISI: ABSOLUTE COORDINATE SYNC + UI CREATION)
 -- ==============================================================================
 
-
--- [TAMBAHAN BARU] Isi Tab Settings
 local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,10); SetList.HorizontalAlignment="Center"
--- 1. Setup Visual Crosshair
+
+-- 1. Setup Visual Crosshair (Dibuat ulang jika belum ada)
 if CrosshairUI then CrosshairUI:Destroy() end 
 CrosshairUI = Instance.new("ImageButton") 
 CrosshairUI.Name = "M1_Crosshair"
-CrosshairUI.Size = UDim2.new(0, 50, 0, 50) -- Ukuran visual target
-CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5) -- TITIK TENGAH = KOORDINAT KLIK
+CrosshairUI.Size = UDim2.new(0, 50, 0, 50) 
+CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5) 
 CrosshairUI.BackgroundTransparency = 1
 CrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420" 
 CrosshairUI.ImageColor3 = Theme.Red
-CrosshairUI.Parent = ScreenGui -- Pastikan ScreenGui IgnoreGuiInset = true jika ingin super akurat
+CrosshairUI.Parent = ScreenGui 
 CrosshairUI.Visible = false
 CrosshairUI.ZIndex = 9999
 
--- Garis Bantu (Visual Crosshair Lines)
 local CH_V = Instance.new("Frame"); CH_V.Size=UDim2.new(0,2,1,0); CH_V.Position=UDim2.new(0.5,-1,0,0); CH_V.BackgroundColor3=Theme.Red; CH_V.Parent=CrosshairUI; CH_V.BorderSizePixel=0
 local CH_H = Instance.new("Frame"); CH_H.Size=UDim2.new(1,0,0,2); CH_H.Position=UDim2.new(0,0,0.5,-1); CH_H.BackgroundColor3=Theme.Red; CH_H.Parent=CrosshairUI; CH_H.BorderSizePixel=0
 
--- [FUNGSI UTAMA] Update Posisi UI agar SAMA PERSIS dengan VIM
-local function UpdateCrosshairToVIM()
-    if not CrosshairUI then return end
-    
-    local vp = Camera.ViewportSize
-    
-    -- RUMUS VIM (INPUT SERANGAN)
-    local vimX = (vp.X / 2) + M1_Offset.X
-    local vimY = (vp.Y / 2) + M1_Offset.Y
-    
-    -- TERAPKAN KE UI (MENGGUNAKAN OFFSET ABSOLUT, BUKAN SCALE)
-    -- UDim2.new(0, PixelX, 0, PixelY)
-    CrosshairUI.Position = UDim2.new(0, vimX, 0, vimY)
-    
-    -- Update Text Koordinat (Opsional)
-    if CalibBtn and CalibBtn.Visible then
-        CalibBtn.Text = "X: " .. math.floor(vimX) .. " | Y: " .. math.floor(vimY)
-    end
-end
-
--- Logic Drag & Drop (Mengubah Offset)
+-- Logic Drag & Drop Crosshair
 local draggingCH, dragInputCH
 
 CrosshairUI.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         draggingCH = true
-        
-        -- Visual Feedback
         CrosshairUI.ImageColor3 = Theme.Green
         CH_V.BackgroundColor3 = Theme.Green
         CH_H.BackgroundColor3 = Theme.Green
@@ -1517,7 +1589,12 @@ CrosshairUI.InputBegan:Connect(function(input)
                 CrosshairUI.ImageColor3 = Theme.Red
                 CH_V.BackgroundColor3 = Theme.Red
                 CH_H.BackgroundColor3 = Theme.Red
-                if CalibBtn then CalibBtn.Text = "FINISH CALIBRATION" end
+                -- Cari tombol finish dan update teksnya
+                for _, c in pairs(P_Set:GetChildren()) do
+                    if c:IsA("TextButton") and c.Text:find("CALIBRATION") then
+                        c.Text = "FINISH CALIBRATION"
+                    end
+                end
             end
         end)
     end
@@ -1534,27 +1611,23 @@ UserInputService.InputChanged:Connect(function(input)
         local vp = Camera.ViewportSize
         local mousePos = input.Position
         
-        -- HITUNG MUNDUR: Offset = MousePos - Tengah Layar
         local centerX = vp.X / 2
         local centerY = vp.Y / 2
         
         local newOffsetX = mousePos.X - centerX
         local newOffsetY = mousePos.Y - centerY
         
-        -- Simpan ke Variable Global
         M1_Offset = Vector2.new(newOffsetX, newOffsetY)
         
-        -- Panggil fungsi update agar UI mengikuti rumus VIM
         UpdateCrosshairToVIM()
     end
 end)
 
--- Listener Resize Layar (Agar crosshair tetap di posisi benar saat layar diputar/resize)
 Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
     UpdateCrosshairToVIM()
 end)
 
--- Masukkan Tombol ke Menu
+-- Tombol Kalibrasi
 local CalibBtn = mkTool("CALIBRATE M1 POSITION (OFF)", Theme.Element, nil, P_Set)
 CalibBtn.Size = UDim2.new(0.9, 0, 0, 45)
 
@@ -1563,7 +1636,7 @@ CalibBtn.MouseButton1Click:Connect(function()
     CrosshairUI.Visible = isVisible
     
     if isVisible then
-        UpdateCrosshairToVIM() -- Sync posisi saat dibuka
+        UpdateCrosshairToVIM() 
         CalibBtn.BackgroundColor3 = Theme.Red
         CalibBtn.TextColor3 = Theme.Bg
         CalibBtn.Text = "FINISH CALIBRATION"
@@ -1576,7 +1649,6 @@ CalibBtn.MouseButton1Click:Connect(function()
     end
 end)
 
--- Info Label
 local InfoLbl = Instance.new("TextLabel")
 InfoLbl.Size = UDim2.new(0.9, 0, 0, 40)
 InfoLbl.Text = "The Red Crosshair shows EXACTLY where the script will tap."
@@ -1587,7 +1659,7 @@ InfoLbl.Font = Enum.Font.Gotham
 InfoLbl.TextSize = 11
 InfoLbl.Parent = P_Set
 
--- Pastikan posisi awal benar
+-- Inisialisasi Posisi Awal
 UpdateCrosshairToVIM()
 
 -- === SYSTEM TAB ===
@@ -1619,7 +1691,8 @@ local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function()
     end 
 end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
 
-local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local all = HttpService:JSONDecode(r); for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local d = Instance.new("TextButton"); d.Size=UDim2.new(1,0,0,30); d.Position=UDim2.new(0,0,0,70); d.BackgroundColor3=Theme.Red; d.Text="DELETE"; d.TextColor3=Theme.Bg; d.Parent=c2; createCorner(d,6); d.ZIndex=2004; d.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local successDecode, all = pcall(function() return HttpService:JSONDecode(r) end); if successDecode and type(all) == "table" then for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local d = Instance.new("TextButton"); d.Size=UDim2.new(1,0,0,30); d.Position=UDim2.new(0,0,0,70); d.BackgroundColor3=Theme.Red; d.Text="DELETE"; d.TextColor3=Theme.Bg; d.Parent=c2; createCorner(d,6); d.ZIndex=2004; d.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+
 local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
     ShowPopup("CONFIRM RESET?", function(c)
         local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
@@ -1648,32 +1721,33 @@ local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function()
             SelectedComboID = nil
             IsLayoutLocked = false
             
-            -- 4. RESET VISUAL (TRANSPARANSI & JOYSTICK)
+            -- 4. RESET VISUAL
             GlobalTransparency = 0
-            TKnob.Position = UDim2.new(0, -6, 0.5, -6)
+            if TKnob then TKnob.Position = UDim2.new(0, -6, 0.5, -6) end
             IsJoystickEnabled = false
             JoyContainer.Visible = false
-            JoyToggle.Text = "JOYSTICK: OFF"
-            JoyToggle.BackgroundColor3 = Theme.Red
+            if JoyToggle then
+                JoyToggle.Text = "JOYSTICK: OFF"
+                JoyToggle.BackgroundColor3 = Theme.Red
+            end
             
-            -- 5. KEMBALIKAN POSISI UI KE DEFAULT (FACTORY RESET)
+            -- 5. RESET POSISI
             Window.Position = UDim2.new(0.5, -300, 0.5, -170)
             ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
             JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
             
-            -- Reset Ukuran Joystick ke Awal
             local defJoySize = 140
             JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
             JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
             createCorner(JoyOuter, defJoySize)
 
-            -- 6. RESET WARNA TOMBOL PILIHAN DI TAB LAYOUT
+            -- 6. RESET SELECTORS
             for k, btn in pairs(VirtualKeySelectors) do
                 btn.BackgroundColor3 = Theme.Element
                 btn.TextColor3 = Theme.Text
             end
 
-            -- 7. REFRESH SEMUA TAMPILAN
+            -- 7. REFRESH
             UpdateTransparencyFunc()
             updateLockState()
             if ResizerUpdateFunc then ResizerUpdateFunc() end
@@ -1711,14 +1785,17 @@ ShowNotification("Custom Layout: READY", Theme.Green)
 task.wait(1)
 ShowNotification("Mobile Engine: ONLINE", Theme.Blue)
 
--- [PERBAIKAN] Auto Load Last Config (Safe Mode)
-if isfile(FileName) then 
-    local s, r = pcall(function() return readfile(FileName) end)
-    if s then 
-        local success, data = pcall(function() return HttpService:JSONDecode(r) end)
-        if success and data and data["LastUsed"] and data[data["LastUsed"]] then 
-            LoadSpecific(data["LastUsed"]) 
-            CurrentConfigName = data["LastUsed"]
+-- [PERBAIKAN FINAL] Auto Load Last Config (Safe Mode & Delayed)
+task.spawn(function()
+    task.wait(1.5) -- Tunggu sebentar agar UI benar-benar siap
+    if isfile(FileName) then 
+        local s, r = pcall(function() return readfile(FileName) end)
+        if s and r ~= "" then 
+            local success, data = pcall(function() return HttpService:JSONDecode(r) end)
+            if success and data and data["LastUsed"] and data[data["LastUsed"]] then 
+                LoadSpecific(data["LastUsed"]) 
+                CurrentConfigName = data["LastUsed"]
+            end 
         end 
-    end 
-end
+    end
+end)
