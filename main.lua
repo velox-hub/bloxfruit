@@ -921,10 +921,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
-        -- Variable Status Hold Instant
+        -- Variable Status
         local isHoldingInstant = false 
-        
-        -- Variable Status Auto Jump
         local isAutoJumping = false
         
         btn.InputBegan:Connect(function(input)
@@ -978,9 +976,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     return 
                 end
 
-                -- [[ C. LOGIKA JUMP (FIXED & CALIBRATED) ]]
+                -- [[ C. LOGIKA JUMP ]]
                 if id == "Jump" then
-                    -- [FIX] Menggunakan Settings_Mode_Jump, bukan Settings_Mode_Dash
                     if Settings_Mode_Jump == "TOGGLE" then
                         isAutoJumping = not isAutoJumping
                         if isAutoJumping then
@@ -991,14 +988,20 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                                     if jumpBtn then
                                         local absPos = jumpBtn.AbsolutePosition
                                         local absSize = jumpBtn.AbsoluteSize
+                                        local midX = absPos.X + (absSize.X / 2) + M1_Offset.X
+                                        local midY = absPos.Y + (absSize.Y / 2) + M1_Offset.Y
                                         
-                                        -- [FIX] Menambahkan M1_Offset agar ikut terkalibrasi
-                                        local centerX = absPos.X + (absSize.X / 2) + M1_Offset.X
-                                        local centerY = absPos.Y + (absSize.Y / 2) + M1_Offset.Y
+                                        local spreadX = absSize.X * 0.4
+                                        local spreadY = absSize.Y * 0.4
+                                        local randomX = math.random(-spreadX, spreadX)
+                                        local randomY = math.random(-spreadY, spreadY)
                                         
-                                        VIM:SendTouchEvent(5, 0, centerX, centerY)
+                                        local finalX = midX + randomX
+                                        local finalY = midY + randomY
+                                        
+                                        VIM:SendTouchEvent(5, 0, finalX, finalY)
                                         task.wait(0.05)
-                                        VIM:SendTouchEvent(5, 2, centerX, centerY)
+                                        VIM:SendTouchEvent(5, 2, finalX, finalY)
                                     end
                                     task.wait(0.8) 
                                 end
@@ -1011,7 +1014,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                         end
                     else
-                        -- MODE HOLD
                         isAutoJumping = true
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         task.spawn(function()
@@ -1020,14 +1022,20 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                                 if jumpBtn then
                                     local absPos = jumpBtn.AbsolutePosition
                                     local absSize = jumpBtn.AbsoluteSize
+                                    local midX = absPos.X + (absSize.X / 2) + M1_Offset.X
+                                    local midY = absPos.Y + (absSize.Y / 2) + M1_Offset.Y
                                     
-                                    -- [FIX] Menambahkan M1_Offset
-                                    local centerX = absPos.X + (absSize.X / 2) + M1_Offset.X
-                                    local centerY = absPos.Y + (absSize.Y / 2) + M1_Offset.Y
+                                    local spreadX = absSize.X * 0.4
+                                    local spreadY = absSize.Y * 0.4
+                                    local randomX = math.random(-spreadX, spreadX)
+                                    local randomY = math.random(-spreadY, spreadY)
                                     
-                                    VIM:SendTouchEvent(5, 0, centerX, centerY)
+                                    local finalX = midX + randomX
+                                    local finalY = midY + randomY
+                                    
+                                    VIM:SendTouchEvent(5, 0, finalX, finalY)
                                     task.wait(0.05)
-                                    VIM:SendTouchEvent(5, 2, centerX, centerY)
+                                    VIM:SendTouchEvent(5, 2, finalX, finalY)
                                 end
                                 task.wait(0.8)
                             end
@@ -1039,6 +1047,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 -- [[ D. WEAPON SWAP ]]
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
+                    -- [PERBAIKAN] Tidak ada perubahan warna visual untuk tombol 1-4
                     return
                 end
                 
@@ -1050,25 +1059,29 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     end
 
                     if SkillMode == "INSTANT" then
-                        -- START HOLD
+                        -- [INSTANT MODE]
+                        -- 1. Tidak ubah warna (Tetap Hitam/Transparan)
+                        -- 2. Support HOLD (Touch Down)
                         isHoldingInstant = true
-                        pressKey(kn)
+                        pressKey(kn) -- Klik UI
                         
                         local vp = Camera.ViewportSize
                         local x = (vp.X / 2) + M1_Offset.X
                         local y = (vp.Y / 2) + M1_Offset.Y
                         
                         task.wait(0.02)
-                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down (Tahan)
+                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down (Tahan Skill)
                         
-                        -- Visual Feedback
-                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     else 
-                        -- SMART MODE
+                        -- [SMART MODE]
+                        -- 1. Ubah warna jadi Orange/Emas (Theme.Accent)
+                        -- 2. Hanya PressKey (Tanpa VIM Touch)
                         pressKey(kn) 
                         CurrentSmartKeyData = vData
                         SmartTouchObject = input 
-                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
+                        
+                        btn.BackgroundColor3 = Theme.Accent -- Orange/Emas
+                        btn.TextColor3 = Color3.new(0,0,0)
                     end
                 end
             end
@@ -1087,7 +1100,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                 end
                 
-                -- [[ MATIKAN JUMP ]]
                 if id == "Jump" and Settings_Mode_Jump == "HOLD" then
                     isAutoJumping = false
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
@@ -1108,13 +1120,15 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             -- 2. VALIDASI WARNA & PAKSA LEPAS (ANTI-STUCK)
                             task.spawn(function()
                                 local targetBtn = GetMobileButtonObj(kn)
-                                local READY_COLOR = Color3.fromRGB(0, 255, 255) 
+                                local CYAN_COLOR = Color3.fromRGB(0, 255, 255) 
                                 
                                 task.wait(0.1) 
                                 
                                 if targetBtn then
                                     local safetyCount = 0
-                                    while targetBtn.BackgroundColor3 == READY_COLOR and safetyCount < 10 do
+                                    -- Cek jika warna masih Cyan (0, 255, 255) -> Berarti Nyangkut
+                                    while targetBtn.BackgroundColor3 == CYAN_COLOR and safetyCount < 10 do
+                                        -- Lakukan PressKey lagi untuk melepas paksa
                                         pressKey(kn) 
                                         VIM:SendTouchEvent(5, 2, x, y)
                                         safetyCount = safetyCount + 1
@@ -1123,10 +1137,13 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                                 end
                             end)
                             
+                            -- Pastikan warna kembali ke Hitam (Default)
                             btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                             btn.TextColor3 = Theme.Accent
                         end
+                        
                     elseif SkillMode == "SMART" then
+                        -- Reset warna Smart Mode (Orange -> Hitam)
                         btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                         btn.TextColor3 = Theme.Accent
                         if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
