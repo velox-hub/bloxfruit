@@ -45,6 +45,9 @@ local DEADZONE = 0.15
 local isRunning = false 
 local IsLayoutLocked = false 
 local GlobalTransparency = 0 
+local Settings_Mode_M1 = "HOLD" 
+local Settings_Mode_Dash = "HOLD" 
+local IsAutoM1_Active = false 
 local M1_Offset = Vector2.new(0, 0) 
 local ShowCrosshair = false 
 local IsAutoDashing = false 
@@ -796,55 +799,109 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- A. M1 Logic
-                if id == "M1" then TapM1() return end
+                -- [[ A. LOGIKA M1 (AUTO CLICK) ]]
+                if id == "M1" then 
+                    if Settings_Mode_M1 == "TOGGLE" then
+                        -- MODE TOGGLE (Klik sekali nyala, klik lagi mati)
+                        IsAutoM1_Active = not IsAutoM1_Active
+                        
+                        if IsAutoM1_Active then
+                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                            -- Loop Spam
+                            task.spawn(function()
+                                while IsAutoM1_Active and ActiveVirtualKeys["M1"] do 
+                                    TapM1()
+                                    task.wait(0.1) -- Kecepatan Spam M1 (Bisa diatur)
+                                end
+                                -- Jika loop berhenti, reset warna
+                                if ActiveVirtualKeys["M1"] then
+                                    ActiveVirtualKeys["M1"].Button.BackgroundColor3 = Color3.new(0,0,0)
+                                    ActiveVirtualKeys["M1"].Button.TextColor3 = Theme.Accent
+                                end
+                            end)
+                        else
+                            -- Matikan
+                            btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                        end
+                    else
+                        -- MODE HOLD (Tahan untuk spam)
+                        IsAutoM1_Active = true
+                        btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                        task.spawn(function()
+                            while IsAutoM1_Active do 
+                                TapM1()
+                                task.wait(0.1)
+                            end
+                        end)
+                    end
+                    return 
+                end
                 
-                -- B. Dodge Logic
+                -- [[ B. LOGIKA DODGE (AUTO DASH) ]]
                 if id == "Dodge" then 
-                    IsAutoDashing = true
-                    btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                    task.spawn(function()
-                        while IsAutoDashing do TriggerDodge() task.wait(0.15) end
-                        btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
-                    end)
+                    if Settings_Mode_Dash == "TOGGLE" then
+                        -- MODE TOGGLE
+                        IsAutoDashing = not IsAutoDashing
+                        
+                        if IsAutoDashing then
+                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                            task.spawn(function()
+                                while IsAutoDashing and ActiveVirtualKeys["Dodge"] do 
+                                    TriggerDodge() 
+                                    task.wait(0.15) 
+                                end
+                                if ActiveVirtualKeys["Dodge"] then
+                                    ActiveVirtualKeys["Dodge"].Button.BackgroundColor3 = Color3.new(0,0,0)
+                                    ActiveVirtualKeys["Dodge"].Button.TextColor3 = Theme.Accent
+                                end
+                            end)
+                        else
+                            btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                        end
+                    else
+                        -- MODE HOLD
+                        IsAutoDashing = true
+                        btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+                        task.spawn(function()
+                            while IsAutoDashing do 
+                                TriggerDodge() 
+                                task.wait(0.15) 
+                            end
+                        end)
+                    end
                     return 
                 end
 
                 -- C. Weapon Swap Logic
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
-                    btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
-                    task.delay(0.1, function() btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent end)
                     return
                 end
                 
-                -- D. Skill Logic (PERBAIKAN DISINI)
+                -- D. Skill Logic
                 if isSkillKey then
-                    -- Cek Weapon Bind (Wajib equip senjata dulu jika di-bind)
                     if slotIdx and not isWeaponReady(slotIdx) then
                         equipWeapon(slotIdx, false)
                         task.wait(0.1) 
                     end
 
                     if SkillMode == "INSTANT" then
-                        -- 1. Tekan Tombol Skill
                         pressKey(kn)
-                        task.wait(0.03) 
-                        
-                        -- 2. Lakukan TAP Penuh (Down -> Wait -> Up) DISINI
-                        -- Agar tidak tertahan (stuck holding)
                         local vp = Camera.ViewportSize
                         local x = (vp.X / 2) + M1_Offset.X
                         local y = (vp.Y / 2) + M1_Offset.Y
                         
-                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
-                        task.wait(0.05)                -- Tahan sebentar
-                        VIM:SendTouchEvent(5, 2, x, y) -- Touch Up (PASTI LEPAS)
-                        
-                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
+                        task.spawn(function()
+                            task.wait(0.02)
+                            VIM:SendTouchEvent(5, 0, x, y)
+                            task.wait(0.05)
+                            VIM:SendTouchEvent(5, 2, x, y)
+                        end)
                     else 
-                        -- Mode Lain (Hanya tekan skill UI)
                         pressKey(kn) 
+                        CurrentSmartKeyData = vData
+                        SmartTouchObject = input 
+                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     end
                 end
             end
@@ -852,13 +909,26 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
 
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
-                if id == "Dodge" then IsAutoDashing = false end
                 
-                -- [PERBAIKAN] Hapus VIM Touch Up di sini untuk INSTANT Mode
-                -- Karena sudah kita handle full di InputBegan agar tidak bug
+                -- [[ RESET HOLD STATE ]]
+                -- Hanya matikan jika modenya HOLD. Jika TOGGLE, biarkan tetap nyala.
                 
-                if SkillMode ~= "SMART" and not isWeaponKey then
-                    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); btn.TextColor3 = Theme.Accent
+                if id == "M1" and Settings_Mode_M1 == "HOLD" then
+                    IsAutoM1_Active = false
+                    btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                end
+
+                if id == "Dodge" and Settings_Mode_Dash == "HOLD" then 
+                    IsAutoDashing = false 
+                    btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                end
+                
+                if SkillMode == "SMART" and isSkillKey then
+                    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                    btn.TextColor3 = Theme.Accent
+                    if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
+                        CurrentSmartKeyData = nil
+                    end
                 end
             end
         end)
@@ -1047,7 +1117,7 @@ local function GetCurrentState()
         if not obj then return {px=0, po=0, py=0, poy=0, sx=0, so=0, sy=0, soy=0} end
         return {px=obj.Position.X.Scale, po=obj.Position.X.Offset, py=obj.Position.Y.Scale, poy=obj.Position.Y.Offset, sx=obj.Size.X.Scale, so=obj.Size.X.Offset, sy=obj.Size.Y.Scale, soy=obj.Size.Y.Offset}
     end
-    local data = { Transparency = GlobalTransparency, JoystickEnabled = IsJoystickEnabled, SkillMode = SkillMode, LayoutLocked = IsLayoutLocked, Pos_Window = getLayout(Window), Pos_Toggle = getLayout(ToggleBtn), Pos_Joy = getLayout(JoyContainer), Pos_JoyOuter = getLayout(JoyOuter), Combos = {}, VirtualKeys = {}, M1_OffsetX = M1_Offset.X, M1_OffsetY = M1_Offset.Y }
+    local data = { Transparency = GlobalTransparency, JoystickEnabled = IsJoystickEnabled, SkillMode = SkillMode, LayoutLocked = IsLayoutLocked, Pos_Window = getLayout(Window), Pos_Toggle = getLayout(ToggleBtn), Pos_Joy = getLayout(JoyContainer), Pos_JoyOuter = getLayout(JoyOuter), Combos = {}, VirtualKeys = {}, M1_OffsetX = M1_Offset.X, M1_OffsetY = M1_Offset.Y, Settings_Mode_M1 = Settings_Mode_M1, Settings_Mode_Dash = Settings_Mode_Dash}
     for _, combo in ipairs(Combos) do if combo.Button then table.insert(data.Combos, {ID = combo.ID, Name = combo.Name, Steps = combo.Steps, Layout = getLayout(combo.Button)}) end end
     for id, vData in pairs(ActiveVirtualKeys) do if vData.Button then table.insert(data.VirtualKeys, {ID = id, KeyName = vData.KeyName, Slot = vData.Slot, Layout = getLayout(vData.Button)}) end end
     return data
@@ -1066,40 +1136,145 @@ end
 
 local function LoadSpecific(configName)
     if not isfile(FileName) then return end
+    
+    -- 1. Baca File
     local successRead, fileContent = pcall(function() return readfile(FileName) end)
     if not successRead or fileContent == "" then return end
+    
+    -- 2. Decode JSON
     local successDecode, fileData = pcall(function() return HttpService:JSONDecode(fileContent) end)
     if not successDecode or type(fileData) ~= "table" or not fileData[configName] then return end
     
+    -- 3. Terapkan Data (Pcall)
     local applySuccess, err = pcall(function()
+        -- [!] DEFINISI VARIABEL DATA ADA DI SINI
         local data = fileData[configName]
+        
+        -- ====================================================
+        -- [PERBAIKAN] LOGIKA SETTINGS DIPINDAHKAN KE SINI
+        -- ====================================================
+        
+        -- Load Settings Mode M1
+        if data.Settings_Mode_M1 then
+            Settings_Mode_M1 = data.Settings_Mode_M1
+            if SetM1Btn then
+                if Settings_Mode_M1 == "TOGGLE" then
+                    SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"
+                    SetM1Btn.BackgroundColor3 = Theme.Blue
+                    SetM1Btn.TextColor3 = Theme.Bg
+                else
+                    SetM1Btn.Text = "AUTO M1: HOLD MODE"
+                    SetM1Btn.BackgroundColor3 = Theme.Element
+                    SetM1Btn.TextColor3 = Theme.SubText
+                end
+            end
+        end
+
+        -- Load Settings Mode Dash
+        if data.Settings_Mode_Dash then
+            Settings_Mode_Dash = data.Settings_Mode_Dash
+            if SetDashBtn then
+                if Settings_Mode_Dash == "TOGGLE" then
+                    SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"
+                    SetDashBtn.BackgroundColor3 = Theme.Blue
+                    SetDashBtn.TextColor3 = Theme.Bg
+                else
+                    SetDashBtn.Text = "AUTO DASH: HOLD MODE"
+                    SetDashBtn.BackgroundColor3 = Theme.Element
+                    SetDashBtn.TextColor3 = Theme.SubText
+                end
+            end
+        end
+        
+        -- ====================================================
+        -- LANJUTAN LOGIKA LAINNYA
+        -- ====================================================
+
         local function applyLayout(obj, layoutData)
             if not obj or not layoutData then return end
             obj.Position = UDim2.new(layoutData.px, layoutData.po, layoutData.py, layoutData.poy)
             obj.Size = UDim2.new(layoutData.sx, layoutData.so, layoutData.sy, layoutData.soy)
         end
-        if data.M1_OffsetX and data.M1_OffsetY then M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY); UpdateCrosshairToVIM() end
+
+        if data.M1_OffsetX and data.M1_OffsetY then 
+            M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
+            UpdateCrosshairToVIM() 
+        end
+
         GlobalTransparency = data.Transparency or 0
         if TKnob then TKnob.Position = UDim2.new(math.clamp(GlobalTransparency/0.9, 0, 1), -6, 0.5, -6) end
-        UpdateTransparencyFunc(); IsLayoutLocked = data.LayoutLocked or false; updateLockState()
+        UpdateTransparencyFunc()
+        
+        IsLayoutLocked = data.LayoutLocked or false
+        updateLockState()
+
         IsJoystickEnabled = data.JoystickEnabled or false
         if JoyContainer then JoyContainer.Visible = IsJoystickEnabled end
-        if JoyToggle then if IsJoystickEnabled then JoyToggle.Text = "JOYSTICK: ON"; JoyToggle.BackgroundColor3 = Theme.Green else JoyToggle.Text = "JOYSTICK: OFF"; JoyToggle.BackgroundColor3 = Theme.Red end end
+        if JoyToggle then 
+            if IsJoystickEnabled then 
+                JoyToggle.Text = "JOYSTICK: ON"
+                JoyToggle.BackgroundColor3 = Theme.Green 
+            else 
+                JoyToggle.Text = "JOYSTICK: OFF"
+                JoyToggle.BackgroundColor3 = Theme.Red 
+            end 
+        end
+
         SkillMode = data.SkillMode or "INSTANT"
-        if ModeBtn then if SkillMode == "SMART" then ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue else ModeBtn.Text = "MODE: INSTANT"; ModeBtn.BackgroundColor3 = Theme.Green end end
+        if ModeBtn then 
+            if SkillMode == "SMART" then 
+                ModeBtn.Text = "MODE: SMART TAP"
+                ModeBtn.BackgroundColor3 = Theme.Blue 
+            else 
+                ModeBtn.Text = "MODE: INSTANT"
+                ModeBtn.BackgroundColor3 = Theme.Green 
+            end 
+        end
+
         if data.Pos_Window then applyLayout(Window, data.Pos_Window) end
         if data.Pos_Toggle then applyLayout(ToggleBtn, data.Pos_Toggle) end
         if data.Pos_Joy then applyLayout(JoyContainer, data.Pos_Joy) end
-        if data.Pos_JoyOuter then applyLayout(JoyOuter, data.Pos_JoyOuter); if data.Pos_JoyOuter.so then createCorner(JoyOuter, data.Pos_JoyOuter.so) end end
+        if data.Pos_JoyOuter then 
+            applyLayout(JoyOuter, data.Pos_JoyOuter)
+            if data.Pos_JoyOuter.so then createCorner(JoyOuter, data.Pos_JoyOuter.so) end 
+        end
 
+        -- Bersihkan tombol lama
         for _, c in pairs(Combos) do if c.Button then c.Button:Destroy() end end; Combos = {}
         for _, vData in pairs(ActiveVirtualKeys) do if vData.Button then vData.Button:Destroy() end end; ActiveVirtualKeys = {}
         
-        if data.Combos and type(data.Combos) == "table" then for _, cData in ipairs(data.Combos) do CreateComboButtonFunc(cData.ID, cData.Steps); local createdCombo = Combos[#Combos]; if createdCombo and cData.Layout then applyLayout(createdCombo.Button, cData.Layout) end end end
-        if data.VirtualKeys and type(data.VirtualKeys) == "table" then for _, vData in ipairs(data.VirtualKeys) do if vData.KeyName then toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID); local createdKey = ActiveVirtualKeys[vData.ID]; if createdKey and vData.Layout then applyLayout(createdKey.Button, vData.Layout); if vData.Layout.so then createCorner(createdKey.Button, 12) end end end end end
+        -- Load Combos
+        if data.Combos and type(data.Combos) == "table" then 
+            for _, cData in ipairs(data.Combos) do 
+                CreateComboButtonFunc(cData.ID, cData.Steps)
+                local createdCombo = Combos[#Combos]
+                if createdCombo and cData.Layout then applyLayout(createdCombo.Button, cData.Layout) end 
+            end 
+        end
+        
+        -- Load Virtual Keys
+        if data.VirtualKeys and type(data.VirtualKeys) == "table" then 
+            for _, vData in ipairs(data.VirtualKeys) do 
+                if vData.KeyName then 
+                    toggleVirtualKey(vData.KeyName, vData.Slot, vData.ID)
+                    local createdKey = ActiveVirtualKeys[vData.ID]
+                    if createdKey and vData.Layout then 
+                        applyLayout(createdKey.Button, vData.Layout)
+                        if vData.Layout.so then createCorner(createdKey.Button, 12) end 
+                    end 
+                end 
+            end 
+        end
+        
         if ResizerUpdateFunc then ResizerUpdateFunc() end
     end)
-    if applySuccess then ShowNotification("Loaded: " .. configName, Theme.Blue) else warn("Velox Load Error: " .. tostring(err)); ShowNotification("Load Partial/Error", Theme.Red) end
+
+    if applySuccess then 
+        ShowNotification("Loaded: " .. configName, Theme.Blue) 
+    else 
+        warn("Velox Load Error: " .. tostring(err))
+        ShowNotification("Load Partial/Error", Theme.Red) 
+    end
 end
 
 -- ==============================================================================
@@ -1140,6 +1315,65 @@ CalibBtn.MouseButton1Click:Connect(function()
 end)
 local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(0.9, 0, 0, 40); InfoLbl.Text = "The Red Crosshair shows EXACTLY where the script will tap."; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.TextWrapped = true; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 11; InfoLbl.Parent = P_Set
 UpdateCrosshairToVIM()
+
+-- ... (Di bawah kode InfoLbl Kalibrasi) ...
+
+mkSection("AUTO BUTTON MODE", 10)
+local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 90); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 11; AutoBox.Parent = P_Set; createCorner(AutoBox,6)
+local AutoPad = Instance.new("UIPadding"); AutoPad.Parent=AutoBox; AutoPad.PaddingTop=UDim.new(0,10); AutoPad.PaddingLeft=UDim.new(0,10); AutoPad.PaddingRight=UDim.new(0,10)
+
+-- Tombol Setting M1
+local SetM1Btn = Instance.new("TextButton")
+SetM1Btn.Size = UDim2.new(1, 0, 0, 30)
+SetM1Btn.BackgroundColor3 = Theme.Element
+SetM1Btn.Text = "AUTO M1: HOLD MODE"
+SetM1Btn.TextColor3 = Theme.SubText
+SetM1Btn.Font = Enum.Font.GothamBold
+SetM1Btn.TextSize = 11
+SetM1Btn.Parent = AutoBox
+createCorner(SetM1Btn, 6)
+
+SetM1Btn.MouseButton1Click:Connect(function()
+    if Settings_Mode_M1 == "HOLD" then
+        Settings_Mode_M1 = "TOGGLE"
+        SetM1Btn.Text = "AUTO M1: TOGGLE MODE (ON/OFF)"
+        SetM1Btn.BackgroundColor3 = Theme.Blue
+        SetM1Btn.TextColor3 = Theme.Bg
+    else
+        Settings_Mode_M1 = "HOLD"
+        SetM1Btn.Text = "AUTO M1: HOLD MODE"
+        SetM1Btn.BackgroundColor3 = Theme.Element
+        SetM1Btn.TextColor3 = Theme.SubText
+        IsAutoM1_Active = false -- Matikan jika sedang nyala
+    end
+end)
+
+-- Tombol Setting Dash
+local SetDashBtn = Instance.new("TextButton")
+SetDashBtn.Size = UDim2.new(1, 0, 0, 30)
+SetDashBtn.Position = UDim2.new(0, 0, 0, 40)
+SetDashBtn.BackgroundColor3 = Theme.Element
+SetDashBtn.Text = "AUTO DASH: HOLD MODE"
+SetDashBtn.TextColor3 = Theme.SubText
+SetDashBtn.Font = Enum.Font.GothamBold
+SetDashBtn.TextSize = 11
+SetDashBtn.Parent = AutoBox
+createCorner(SetDashBtn, 6)
+
+SetDashBtn.MouseButton1Click:Connect(function()
+    if Settings_Mode_Dash == "HOLD" then
+        Settings_Mode_Dash = "TOGGLE"
+        SetDashBtn.Text = "AUTO DASH: TOGGLE MODE (ON/OFF)"
+        SetDashBtn.BackgroundColor3 = Theme.Blue
+        SetDashBtn.TextColor3 = Theme.Bg
+    else
+        Settings_Mode_Dash = "HOLD"
+        SetDashBtn.Text = "AUTO DASH: HOLD MODE"
+        SetDashBtn.BackgroundColor3 = Theme.Element
+        SetDashBtn.TextColor3 = Theme.SubText
+        IsAutoDashing = false -- Matikan jika sedang nyala
+    end
+end)
 
 -- === SYSTEM TAB ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
