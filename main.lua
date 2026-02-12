@@ -359,27 +359,29 @@ local function executeComboSequence(idx)
             
             -- [4] Delay Tambahan (Jika diatur di editor)
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end    
-            if SkillMode == "SMART" then 
+            if SkillMode == "SMART" and i == 1 then 
                 while CurrentSmartKeyData ~= nil and isRunning do
                     task.wait() -- Cek setiap frame
                 end
-            else        
-                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    -- Simulasi Tahan M1
-                    local vp = Camera.ViewportSize
-                    local x = (vp.X / 2) + M1_Offset.X
-                    local y = (vp.Y / 2) + M1_Offset.Y
-                    VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
-                    task.wait(step.HoldTime) -- Tahan sesuai setting UI
-                    VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
-                else
-                    -- Jika Mode Tap Biasa
-                    TapM1()
-                    task.wait(0.03)
-                    TapM1()
-                    task.wait(0.03)
-                    TapM1()
-                end    
+            else 
+                while CurrentSmartKeyData ~= nil and isRunning do       
+                    if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                        -- Simulasi Tahan M1
+                        local vp = Camera.ViewportSize
+                        local x = (vp.X / 2) + M1_Offset.X
+                        local y = (vp.Y / 2) + M1_Offset.Y
+                        VIM:SendTouchEvent(5, 0, x, y) -- Touch Down
+                        task.wait(step.HoldTime) -- Tahan sesuai setting UI
+                        VIM:SendTouchEvent(5, 2, x, y) -- Touch Up
+                    else
+                        -- Jika Mode Tap Biasa
+                        TapM1()
+                        task.wait(0.03)
+                        TapM1()
+                        task.wait(0.03)
+                        TapM1()
+                    end   
+                end 
             end       
             -- [4] Jeda Antar Langkah
             task.wait(0.2)
@@ -389,7 +391,7 @@ local function executeComboSequence(idx)
         local vp = Camera.ViewportSize
         VIM:SendTouchEvent(5, 2, (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y)
         isRunning = false
-        SelectedComboID = nil 
+        SelectedComboID = nil
         
         if btn then 
             btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
@@ -1366,6 +1368,7 @@ local function LoadSpecific(configName)
 
         if data.M1_OffsetX and data.M1_OffsetY then
             M1_Offset = Vector2.new(data.M1_OffsetX, data.M1_OffsetY)
+            UpdateCrosshairToVIM()
         end
 
         GlobalTransparency = data.Transparency or 0
@@ -1445,62 +1448,140 @@ local function LoadSpecific(configName)
     end
 end
 
+-- ==============================================================================
+-- TAB SETTINGS  (REVISI: ABSOLUTE COORDINATE SYNC)
+-- ==============================================================================
+
+
 -- [TAMBAHAN BARU] Isi Tab Settings
 local SetList = Instance.new("UIListLayout"); SetList.Parent=P_Set; SetList.Padding=UDim.new(0,10); SetList.HorizontalAlignment="Center"
-
--- Fungsi Pembantu Slider
-local function mkSlider(parent, title, min, max, default, callback)
-    local frame = Instance.new("Frame"); frame.Size=UDim2.new(0.9,0,0,50); frame.BackgroundColor3=Theme.Element; frame.Parent=parent; createCorner(frame,6)
-    local lbl = Instance.new("TextLabel"); lbl.Size=UDim2.new(1,0,0,20); lbl.Text=title..": "..default; lbl.TextColor3=Theme.SubText; lbl.BackgroundTransparency=1; lbl.Parent=frame; lbl.Font=Enum.Font.GothamBold; lbl.TextSize=11
-    local bar = Instance.new("Frame"); bar.Size=UDim2.new(0.9,0,0,4); bar.Position=UDim2.new(0.05,0,0.7,0); bar.BackgroundColor3=Theme.Stroke; bar.Parent=frame; createCorner(bar,2)
-    local knob = Instance.new("TextButton"); knob.Size=UDim2.new(0,14,0,14); knob.BackgroundColor3=Theme.Accent; knob.Text=""; knob.Parent=bar; createCorner(knob,7); knob.Selectable=false
-    
-    -- Hitung posisi awal knob
-    local startP = (default - min) / (max - min)
-    knob.Position = UDim2.new(math.clamp(startP, 0, 1), -7, 0.5, -7)
-
-    local drag=false
-    knob.InputBegan:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then drag=true end end)
-    UserInputService.InputChanged:Connect(function(i)
-        if drag and (i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch) then
-            local p = math.clamp((i.Position.X - bar.AbsolutePosition.X) / bar.AbsoluteSize.X, 0, 1)
-            knob.Position = UDim2.new(p, -7, 0.5, -7)
-            local val = math.floor(min + (p * (max - min)))
-            lbl.Text = title..": "..val
-            callback(val)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.Touch or i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end end)
-end
-
--- Visual Crosshair (Titik Merah di Layar)
-CrosshairUI = Instance.new("Frame")
-CrosshairUI.Size = UDim2.new(0, 10, 0, 10)
-CrosshairUI.BackgroundColor3 = Theme.Red
-CrosshairUI.Parent = ScreenGui
+-- 1. Setup Visual Crosshair
+if CrosshairUI then CrosshairUI:Destroy() end 
+CrosshairUI = Instance.new("ImageButton") 
+CrosshairUI.Name = "M1_Crosshair"
+CrosshairUI.Size = UDim2.new(0, 50, 0, 50) -- Ukuran visual target
+CrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5) -- TITIK TENGAH = KOORDINAT KLIK
+CrosshairUI.BackgroundTransparency = 1
+CrosshairUI.Image = "rbxthumb://type=Asset&id=113695277978161&w=420&h=420" 
+CrosshairUI.ImageColor3 = Theme.Red
+CrosshairUI.Parent = ScreenGui -- Pastikan ScreenGui IgnoreGuiInset = true jika ingin super akurat
 CrosshairUI.Visible = false
 CrosshairUI.ZIndex = 9999
-createCorner(CrosshairUI, 5)
 
-local function UpdateCrosshair()
+-- Garis Bantu (Visual Crosshair Lines)
+local CH_V = Instance.new("Frame"); CH_V.Size=UDim2.new(0,2,1,0); CH_V.Position=UDim2.new(0.5,-1,0,0); CH_V.BackgroundColor3=Theme.Red; CH_V.Parent=CrosshairUI; CH_V.BorderSizePixel=0
+local CH_H = Instance.new("Frame"); CH_H.Size=UDim2.new(1,0,0,2); CH_H.Position=UDim2.new(0,0,0.5,-1); CH_H.BackgroundColor3=Theme.Red; CH_H.Parent=CrosshairUI; CH_H.BorderSizePixel=0
+
+-- [FUNGSI UTAMA] Update Posisi UI agar SAMA PERSIS dengan VIM
+local function UpdateCrosshairToVIM()
+    if not CrosshairUI then return end
+    
     local vp = Camera.ViewportSize
-    local x = (vp.X / 2) + M1_Offset.X
-    local y = (vp.Y / 2) + M1_Offset.Y
-    CrosshairUI.Position = UDim2.new(0, x - 5, 0, y - 5)
+    
+    -- RUMUS VIM (INPUT SERANGAN)
+    local vimX = (vp.X / 2) + M1_Offset.X
+    local vimY = (vp.Y / 2) + M1_Offset.Y
+    
+    -- TERAPKAN KE UI (MENGGUNAKAN OFFSET ABSOLUT, BUKAN SCALE)
+    -- UDim2.new(0, PixelX, 0, PixelY)
+    CrosshairUI.Position = UDim2.new(0, vimX, 0, vimY)
+    
+    -- Update Text Koordinat (Opsional)
+    if CalibBtn and CalibBtn.Visible then
+        CalibBtn.Text = "X: " .. math.floor(vimX) .. " | Y: " .. math.floor(vimY)
+    end
 end
 
--- Masukkan Slider ke Tab Settings
-local ToggleCH = mkTool("SHOW CROSSHAIR: OFF", Theme.Red, nil, P_Set); ToggleCH.Size=UDim2.new(0.9,0,0,40)
-ToggleCH.MouseButton1Click:Connect(function() 
-    ShowCrosshair = not ShowCrosshair
-    CrosshairUI.Visible = ShowCrosshair
-    UpdateCrosshair()
-    ToggleCH.Text = ShowCrosshair and "SHOW CROSSHAIR: ON" or "SHOW CROSSHAIR: OFF"
-    ToggleCH.BackgroundColor3 = ShowCrosshair and Theme.Green or Theme.Red
+-- Logic Drag & Drop (Mengubah Offset)
+local draggingCH, dragInputCH
+
+CrosshairUI.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        draggingCH = true
+        
+        -- Visual Feedback
+        CrosshairUI.ImageColor3 = Theme.Green
+        CH_V.BackgroundColor3 = Theme.Green
+        CH_H.BackgroundColor3 = Theme.Green
+        
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                draggingCH = false
+                CrosshairUI.ImageColor3 = Theme.Red
+                CH_V.BackgroundColor3 = Theme.Red
+                CH_H.BackgroundColor3 = Theme.Red
+                if CalibBtn then CalibBtn.Text = "FINISH CALIBRATION" end
+            end
+        end)
+    end
 end)
 
-mkSlider(P_Set, "M1 OFFSET X (Horizontal)", -300, 300, 0, function(v) M1_Offset = Vector2.new(v, M1_Offset.Y); UpdateCrosshair() end)
-mkSlider(P_Set, "M1 OFFSET Y (Vertical)", -300, 300, 0, function(v) M1_Offset = Vector2.new(M1_Offset.X, v); UpdateCrosshair() end)
+CrosshairUI.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInputCH = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInputCH and draggingCH then
+        local vp = Camera.ViewportSize
+        local mousePos = input.Position
+        
+        -- HITUNG MUNDUR: Offset = MousePos - Tengah Layar
+        local centerX = vp.X / 2
+        local centerY = vp.Y / 2
+        
+        local newOffsetX = mousePos.X - centerX
+        local newOffsetY = mousePos.Y - centerY
+        
+        -- Simpan ke Variable Global
+        M1_Offset = Vector2.new(newOffsetX, newOffsetY)
+        
+        -- Panggil fungsi update agar UI mengikuti rumus VIM
+        UpdateCrosshairToVIM()
+    end
+end)
+
+-- Listener Resize Layar (Agar crosshair tetap di posisi benar saat layar diputar/resize)
+Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function()
+    UpdateCrosshairToVIM()
+end)
+
+-- Masukkan Tombol ke Menu
+local CalibBtn = mkTool("CALIBRATE M1 POSITION (OFF)", Theme.Element, nil, P_Set)
+CalibBtn.Size = UDim2.new(0.9, 0, 0, 45)
+
+CalibBtn.MouseButton1Click:Connect(function()
+    local isVisible = not CrosshairUI.Visible
+    CrosshairUI.Visible = isVisible
+    
+    if isVisible then
+        UpdateCrosshairToVIM() -- Sync posisi saat dibuka
+        CalibBtn.BackgroundColor3 = Theme.Red
+        CalibBtn.TextColor3 = Theme.Bg
+        CalibBtn.Text = "FINISH CALIBRATION"
+        ShowNotification("Drag Crosshair to Aim Point", Theme.Accent)
+    else
+        CalibBtn.Text = "CALIBRATE M1 POSITION (OFF)"
+        CalibBtn.BackgroundColor3 = Theme.Element
+        CalibBtn.TextColor3 = Theme.Text
+        ShowNotification("Position Saved!", Theme.Green)
+    end
+end)
+
+-- Info Label
+local InfoLbl = Instance.new("TextLabel")
+InfoLbl.Size = UDim2.new(0.9, 0, 0, 40)
+InfoLbl.Text = "The Red Crosshair shows EXACTLY where the script will tap."
+InfoLbl.TextColor3 = Theme.SubText
+InfoLbl.BackgroundTransparency = 1
+InfoLbl.TextWrapped = true
+InfoLbl.Font = Enum.Font.Gotham
+InfoLbl.TextSize = 11
+InfoLbl.Parent = P_Set
+
+-- Pastikan posisi awal benar
+UpdateCrosshairToVIM()
 
 -- === SYSTEM TAB ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
