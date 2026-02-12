@@ -378,9 +378,12 @@ local function executeComboSequence(idx)
         local vp = Camera.ViewportSize
         local x = (vp.X / 2) + M1_Offset.X
         local y = (vp.Y / 2) + M1_Offset.Y
+        
+        -- WARNA CYAN = Skill Sedang Equip/Ready/Charging
         local READY_COLOR = Color3.fromRGB(0, 255, 255)
 
         for i, step in ipairs(data.Steps) do
+            -- [1] SAFETY STOP AWAL
             if not isRunning then break end
             
             local char = LocalPlayer.Character
@@ -388,91 +391,93 @@ local function executeComboSequence(idx)
                 isRunning = false; break 
             end
             
-            -- [PERBAIKAN UTAMA: TUNGGU ANIMASI SELESAI]
-            -- Sebelum melakukan apapun di langkah ini, cek apakah skill sebelumnya masih jalan animasinya?
-            -- Kita kecualikan langkah pertama (i=1) karena belum ada skill sebelumnya.
-            if i > 1 then
-                local animTimeout = 0
-                -- Tunggu sampai karakter TIDAK SIBUK (Animasi Action selesai)
-                while IsCharacterBusy() and isRunning do
-                    animTimeout = animTimeout + 1
-                    if animTimeout > 30 then break end -- Max tunggu 1.5 detik (Safety)
-                    task.wait(0.05)
-                end
-            end
-            
-            -- [1] Equip Senjata
+            -- [2] PERSIAPAN (Equip & Tekan Skill)
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
-            
-            -- [2] Trigger Skill UI
             pressKey(step.Key)
             
-            task.wait(0.05) 
-            
-            if step.Delay and step.Delay > 0 then task.wait(step.Delay) end    
-            
-            -- [3] EKSEKUSI (Logika M1 / Hold)
+            -- Wait super pendek (0.05s) agar game register tombol skill sebelum kita tekan M1
+            local t = tick()
+            while tick() - t < 0.05 do if not isRunning then break end task.wait() end
+            if not isRunning then break end
+
+            -- [3] EKSEKUSI SERANGAN (LANGSUNG TEKAN, JANGAN NUNGGU WARNA)
             if SkillMode == "SMART" and i == 1 then 
+                -- Manual Mode
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
             else 
-                -- Logika Auto (Hold/Tap)
-                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    local chargeCheck = 0
-                    local targetBtn = GetMobileButtonObj(step.Key)
-                    
-                    -- Cek Charging (Warna Cyan)
-                    if targetBtn then
-                        while targetBtn.BackgroundColor3 ~= READY_COLOR and chargeCheck < 6 do
-                            VIM:SendTouchEvent(5, 0, x, y) 
-                            task.wait(0.05)
-                            chargeCheck = chargeCheck + 1
-                        end
-                    else
-                        VIM:SendTouchEvent(5, 0, x, y)
-                    end
-                    
-                    task.wait(step.HoldTime)
-                    VIM:SendTouchEvent(5, 2, x, y)
-                else
-                    VIM:SendTouchEvent(5, 0, x, y)
-                    task.wait(0.05)
-                    VIM:SendTouchEvent(5, 2, x, y)
-                end 
+                -- Auto Mode (Responsif)
                 
-                -- Logika Anti-Skip (Warna)
-                local targetBtn = GetMobileButtonObj(step.Key)
-                if targetBtn then
-                    local timeout = 0
-                    while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
-                        -- Spam M1 untuk memaksa skill keluar
-                        if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                            VIM:SendTouchEvent(5, 0, x, y) 
-                            task.wait(0.1) -- Hold dikit saat retry
-                            VIM:SendTouchEvent(5, 2, x, y) 
-                        else
-                            VIM:SendTouchEvent(5, 0, x, y)
-                            task.wait(0.05)
-                            VIM:SendTouchEvent(5, 2, x, y)
+                -- A. START DELAY (Jika ada settingan delay dari user)
+                if step.Delay and step.Delay > 0 then 
+                    local endDelay = tick() + step.Delay
+                    while tick() < endDelay do if not isRunning then break end task.wait() end
+                end
+                
+                if not isRunning then break end
+
+                -- B. TOUCH DOWN (Mulai Tahan/Charge Skill)
+                -- Kita lakukan ini SEGERA agar terasa responsif
+                VIM:SendTouchEvent(5, 0, x, y) 
+                
+                -- C. PROSES HOLDING
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    local endHold = tick() + step.HoldTime
+                    while tick() < endHold do
+                        if not isRunning then break end 
+                        task.wait()
+                    end
+                else
+                    -- Jika Tap biasa, beri jeda dikit biar server baca input down
+                    task.wait(0.05) 
+                end
+                
+                -- D. TOUCH UP (Lepas Skill / Tembak)
+                VIM:SendTouchEvent(5, 2, x, y)
+                
+                -- [4] VALIDASI WARNA (ANTI-SKIP & CONFIRMATION)
+                -- Di sini kita pastikan skill benar-benar sudah keluar (Jadi Abu-abu/Hitam)
+                -- Jika masih Cyan, kita paksa keluar.
+                
+                if isRunning then
+                    local targetBtn = GetMobileButtonObj(step.Key)
+                    if targetBtn then
+                        -- Tunggu sebentar (max 0.15s) untuk melihat apakah warna berubah jadi Cyan
+                        -- (Game butuh waktu render UI).
+                        local waitRender = 0
+                        while waitRender < 5 do
+                            if targetBtn.BackgroundColor3 == READY_COLOR then break end
+                            task.wait(0.03)
+                            waitRender = waitRender + 1
                         end
                         
-                        timeout = timeout + 1
-                        if timeout > 40 then break end
-                        task.wait(0.05)
+                        -- LOOP PENYELAMAT:
+                        -- Jika warna MASIH CYAN (Berarti skill belum keluar/masih hold/nyangkut)
+                        local safetyCount = 0
+                        while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
+                            
+                            -- Spam M1 (Tekan -> Lepas Cepat)
+                            VIM:SendTouchEvent(5, 0, x, y)
+                            task.wait(0.03) 
+                            VIM:SendTouchEvent(5, 2, x, y)
+                            
+                            safetyCount = safetyCount + 1
+                            if safetyCount > 30 then break end -- Max 1.5 detik spam
+                            task.wait(0.05)
+                        end
                     end
-                else
-                    task.wait(0.1)
                 end
             end 
             
-            -- Cleanup Langkah
-            VIM:SendTouchEvent(5, 2, x, y)
+            -- [5] Final Cleanup Langkah
+            VIM:SendTouchEvent(5, 2, x, y) -- Lepas total
             CurrentSmartKeyData = nil 
-            -- HAPUS WAIT DISINI, kita sudah pakai IsCharacterBusy di awal loop berikutnya
-            -- task.wait(0.1) 
+            
+            -- Jeda antar langkah (Bisa sangat cepat karena kita sudah validasi warna)
+            if isRunning then task.wait(0.1) end
         end
         
-        -- Cleanup Akhir
+        -- [CLEANUP AKHIR] 
         VIM:SendTouchEvent(5, 2, x, y)
         isRunning = false
         SelectedComboID = nil
