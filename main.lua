@@ -191,6 +191,41 @@ UpdateTransparencyFunc = function()
     end
 end
 
+local function IsCharacterBusy()
+    local char = LocalPlayer.Character
+    if not char then return false end
+    
+    local hum = char:FindFirstChild("Humanoid")
+    local animator = hum and hum:FindFirstChild("Animator")
+    
+    if animator then
+        -- Dapatkan semua animasi yang sedang jalan
+        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
+            -- Cek Prioritas. Skill biasanya Action, Action2, Action3, Action4.
+            -- Idle/Walk/Run biasanya Core atau Movement (tidak kita hitung).
+            local p = track.Priority
+            if p == Enum.AnimationPriority.Action or 
+               p == Enum.AnimationPriority.Action2 or 
+               p == Enum.AnimationPriority.Action3 or 
+               p == Enum.AnimationPriority.Action4 then
+                
+                -- Opsional: Cek jika animasi hampir selesai (sisa 0.1 detik)
+                -- Agar combo lebih cepat (animation cancelling)
+                if track.Length > 0 and (track.TimePosition < track.Length - 0.15) then
+                    return true -- Masih sibuk animasi
+                end
+            end
+        end
+    end
+    
+    -- [OPSIONAL KHUSUS BLOX FRUITS / GAME LAIN]
+    -- Kadang game menyimpan status stun/busy di value
+    if char:FindFirstChild("Stun") and char.Stun.Value > 0 then return true end
+    if char:FindFirstChild("Busy") and char.Busy.Value then return true end
+    
+    return false -- Aman, karakter diam/idle
+end
+
 local function updateLockState()
     if JoyDrag then JoyDrag.Visible = (not IsLayoutLocked) and IsJoystickEnabled end
     if LockBtn then
@@ -353,33 +388,67 @@ local function executeComboSequence(idx)
                 isRunning = false; break 
             end
             
+            -- [PERBAIKAN UTAMA: TUNGGU ANIMASI SELESAI]
+            -- Sebelum melakukan apapun di langkah ini, cek apakah skill sebelumnya masih jalan animasinya?
+            -- Kita kecualikan langkah pertama (i=1) karena belum ada skill sebelumnya.
+            if i > 1 then
+                local animTimeout = 0
+                -- Tunggu sampai karakter TIDAK SIBUK (Animasi Action selesai)
+                while IsCharacterBusy() and isRunning do
+                    animTimeout = animTimeout + 1
+                    if animTimeout > 30 then break end -- Max tunggu 1.5 detik (Safety)
+                    task.wait(0.05)
+                end
+            end
+            
+            -- [1] Equip Senjata
             if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
+            
+            -- [2] Trigger Skill UI
             pressKey(step.Key)
+            
             task.wait(0.05) 
             
             if step.Delay and step.Delay > 0 then task.wait(step.Delay) end    
             
+            -- [3] EKSEKUSI (Logika M1 / Hold)
             if SkillMode == "SMART" and i == 1 then 
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
             else 
+                -- Logika Auto (Hold/Tap)
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    VIM:SendTouchEvent(5, 0, x, y)
+                    local chargeCheck = 0
+                    local targetBtn = GetMobileButtonObj(step.Key)
+                    
+                    -- Cek Charging (Warna Cyan)
+                    if targetBtn then
+                        while targetBtn.BackgroundColor3 ~= READY_COLOR and chargeCheck < 6 do
+                            VIM:SendTouchEvent(5, 0, x, y) 
+                            task.wait(0.05)
+                            chargeCheck = chargeCheck + 1
+                        end
+                    else
+                        VIM:SendTouchEvent(5, 0, x, y)
+                    end
+                    
                     task.wait(step.HoldTime)
                     VIM:SendTouchEvent(5, 2, x, y)
                 else
                     VIM:SendTouchEvent(5, 0, x, y)
                     task.wait(0.05)
-                    VIM:SendTouchEvent(5, 2, x, y) 
+                    VIM:SendTouchEvent(5, 2, x, y)
                 end 
                 
+                -- Logika Anti-Skip (Warna)
                 local targetBtn = GetMobileButtonObj(step.Key)
                 if targetBtn then
                     local timeout = 0
                     while targetBtn.BackgroundColor3 == READY_COLOR and isRunning do
+                        -- Spam M1 untuk memaksa skill keluar
                         if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                             VIM:SendTouchEvent(5, 0, x, y) 
-                            task.wait(step.HoldTime)
+                            task.wait(0.1) -- Hold dikit saat retry
                             VIM:SendTouchEvent(5, 2, x, y) 
                         else
                             VIM:SendTouchEvent(5, 0, x, y)
@@ -388,18 +457,22 @@ local function executeComboSequence(idx)
                         end
                         
                         timeout = timeout + 1
-                        if timeout > 20 then break end
-                        task.wait(0.05) 
+                        if timeout > 40 then break end
+                        task.wait(0.05)
                     end
                 else
                     task.wait(0.1)
                 end
             end 
+            
+            -- Cleanup Langkah
             VIM:SendTouchEvent(5, 2, x, y)
             CurrentSmartKeyData = nil 
-            task.wait(0.1) 
+            -- HAPUS WAIT DISINI, kita sudah pakai IsCharacterBusy di awal loop berikutnya
+            -- task.wait(0.1) 
         end
         
+        -- Cleanup Akhir
         VIM:SendTouchEvent(5, 2, x, y)
         isRunning = false
         SelectedComboID = nil
@@ -796,42 +869,36 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
+        -- Variable untuk melacak status Hold di Mode Instant
+        local isHoldingInstant = false 
+        
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
                 -- [[ A. LOGIKA M1 (AUTO CLICK) ]]
                 if id == "M1" then 
                     if Settings_Mode_M1 == "TOGGLE" then
-                        -- MODE TOGGLE (Klik sekali nyala, klik lagi mati)
                         IsAutoM1_Active = not IsAutoM1_Active
-                        
                         if IsAutoM1_Active then
                             btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                            -- Loop Spam
                             task.spawn(function()
                                 while IsAutoM1_Active and ActiveVirtualKeys["M1"] do 
                                     TapM1()
-                                    task.wait(0.1) -- Kecepatan Spam M1 (Bisa diatur)
+                                    task.wait(0.1) 
                                 end
-                                -- Jika loop berhenti, reset warna
                                 if ActiveVirtualKeys["M1"] then
                                     ActiveVirtualKeys["M1"].Button.BackgroundColor3 = Color3.new(0,0,0)
                                     ActiveVirtualKeys["M1"].Button.TextColor3 = Theme.Accent
                                 end
                             end)
                         else
-                            -- Matikan
                             btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                         end
                     else
-                        -- MODE HOLD (Tahan untuk spam)
                         IsAutoM1_Active = true
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         task.spawn(function()
-                            while IsAutoM1_Active do 
-                                TapM1()
-                                task.wait(0.1)
-                            end
+                            while IsAutoM1_Active do TapM1(); task.wait(0.1) end
                         end)
                     end
                     return 
@@ -840,16 +907,11 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 -- [[ B. LOGIKA DODGE (AUTO DASH) ]]
                 if id == "Dodge" then 
                     if Settings_Mode_Dash == "TOGGLE" then
-                        -- MODE TOGGLE
                         IsAutoDashing = not IsAutoDashing
-                        
                         if IsAutoDashing then
                             btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                             task.spawn(function()
-                                while IsAutoDashing and ActiveVirtualKeys["Dodge"] do 
-                                    TriggerDodge() 
-                                    task.wait(0.15) 
-                                end
+                                while IsAutoDashing and ActiveVirtualKeys["Dodge"] do TriggerDodge(); task.wait(0.15) end
                                 if ActiveVirtualKeys["Dodge"] then
                                     ActiveVirtualKeys["Dodge"].Button.BackgroundColor3 = Color3.new(0,0,0)
                                     ActiveVirtualKeys["Dodge"].Button.TextColor3 = Theme.Accent
@@ -859,26 +921,22 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                             btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                         end
                     else
-                        -- MODE HOLD
                         IsAutoDashing = true
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         task.spawn(function()
-                            while IsAutoDashing do 
-                                TriggerDodge() 
-                                task.wait(0.15) 
-                            end
+                            while IsAutoDashing do TriggerDodge(); task.wait(0.15) end
                         end)
                     end
                     return 
                 end
 
-                -- C. Weapon Swap Logic
+                -- [[ C. LOGIKA WEAPON SWAP ]]
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
                     return
                 end
                 
-                -- D. Skill Logic
+                -- [[ D. LOGIKA SKILL (INSTANT HOLD & SMART) ]]
                 if isSkillKey then
                     if slotIdx and not isWeaponReady(slotIdx) then
                         equipWeapon(slotIdx, false)
@@ -886,18 +944,23 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     end
 
                     if SkillMode == "INSTANT" then
-                        pressKey(kn)
+                        -- [REVISI] SUPPORT HOLD DI MODE INSTANT
+                        isHoldingInstant = true
+                        pressKey(kn) -- Tekan tombol skill di UI
+                        
                         local vp = Camera.ViewportSize
                         local x = (vp.X / 2) + M1_Offset.X
                         local y = (vp.Y / 2) + M1_Offset.Y
                         
-                        task.spawn(function()
-                            task.wait(0.02)
-                            VIM:SendTouchEvent(5, 0, x, y)
-                            task.wait(0.05)
-                            VIM:SendTouchEvent(5, 2, x, y)
-                        end)
+                        task.wait(0.02) -- Jeda kecil agar skill ter-equip
+                        
+                        -- Tahan Skill (Touch Down)
+                        VIM:SendTouchEvent(5, 0, x, y)
+                        
+                        -- Ubah warna jadi Kuning saat ditahan
+                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                     else 
+                        -- Mode Smart
                         pressKey(kn) 
                         CurrentSmartKeyData = vData
                         SmartTouchObject = input 
@@ -910,9 +973,6 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- [[ RESET HOLD STATE ]]
-                -- Hanya matikan jika modenya HOLD. Jika TOGGLE, biarkan tetap nyala.
-                
                 if id == "M1" and Settings_Mode_M1 == "HOLD" then
                     IsAutoM1_Active = false
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
@@ -923,11 +983,28 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
                 end
                 
-                if SkillMode == "SMART" and isSkillKey then
-                    btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                    btn.TextColor3 = Theme.Accent
-                    if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
-                        CurrentSmartKeyData = nil
+                if isSkillKey then
+                    if SkillMode == "INSTANT" then
+                        -- [REVISI] LEPAS SKILL SAAT JARI DIANGKAT
+                        if isHoldingInstant then
+                            isHoldingInstant = false
+                            local vp = Camera.ViewportSize
+                            local x = (vp.X / 2) + M1_Offset.X
+                            local y = (vp.Y / 2) + M1_Offset.Y
+                            
+                            VIM:SendTouchEvent(5, 2, x, y) -- Touch Up (Lepas Skill)
+                            
+                            -- Reset Warna
+                            btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                            btn.TextColor3 = Theme.Accent
+                        end
+                    elseif SkillMode == "SMART" then
+                        -- Mode Smart Reset
+                        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+                        btn.TextColor3 = Theme.Accent
+                        if CurrentSmartKeyData and CurrentSmartKeyData.ID == id then
+                            CurrentSmartKeyData = nil
+                        end
                     end
                 end
             end
