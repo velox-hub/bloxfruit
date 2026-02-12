@@ -1025,23 +1025,22 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         if isAutoJumping then
                             btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                             task.spawn(function()
+                                -- Tambahkan pengecekan ActiveVirtualKeys agar loop mati jika tombol dihapus
                                 while isAutoJumping and ActiveVirtualKeys["Jump"] do
                                     local jumpBtn = GetJumpButton()
                                     if jumpBtn then
                                         local absPos = jumpBtn.AbsolutePosition
                                         local absSize = jumpBtn.AbsoluteSize
-                                        
-                                        -- Hitung Titik Tengah + Offset Kalibrasi
                                         local finalX = absPos.X + (absSize.X / 2) + Jump_Offset.X
                                         local finalY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
                                         
-                                        -- Tekan Tepat di Titik Tersebut (Tanpa Random)
                                         VIM:SendTouchEvent(5, 0, finalX, finalY)
-                                        task.wait(0.05)
+                                        task.wait(0.02)
                                         VIM:SendTouchEvent(5, 2, finalX, finalY)
                                     end
-                                    task.wait(0.8) 
+                                    task.wait(0.1) -- Sudah benar 0.1s
                                 end
+                                -- Reset visual jika loop berhenti
                                 if ActiveVirtualKeys["Jump"] then
                                     ActiveVirtualKeys["Jump"].Button.BackgroundColor3 = Color3.new(0,0,0)
                                     ActiveVirtualKeys["Jump"].Button.TextColor3 = Theme.Accent
@@ -1055,22 +1054,20 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         isAutoJumping = true
                         btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
                         task.spawn(function()
-                            while isAutoJumping do
+                            -- TAMBAHKAN ActiveVirtualKeys["Jump"] di sini untuk mencegah ghosting
+                            while isAutoJumping and ActiveVirtualKeys["Jump"] do
                                 local jumpBtn = GetJumpButton()
                                 if jumpBtn then
                                     local absPos = jumpBtn.AbsolutePosition
                                     local absSize = jumpBtn.AbsoluteSize
-                                    
-                                    -- Hitung Titik Tengah + Offset Kalibrasi
                                     local finalX = absPos.X + (absSize.X / 2) + Jump_Offset.X
                                     local finalY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
                                     
-                                    -- Tekan Tepat di Titik Tersebut
                                     VIM:SendTouchEvent(5, 0, finalX, finalY)
-                                    task.wait(0.05)
+                                    task.wait(0.02)
                                     VIM:SendTouchEvent(5, 2, finalX, finalY)
                                 end
-                                task.wait(0.8)
+                                task.wait(0.1) -- PERBAIKAN: Ubah dari 0.8 ke 0.1 agar cepat
                             end
                         end)
                     end
@@ -1231,7 +1228,7 @@ local Grid1 = Instance.new("UIGridLayout"); Grid1.Parent=SetBox; Grid1.CellSize 
 
 LockBtn = mkTool("POS: UNLOCKED", Theme.Green, function() IsLayoutLocked=not IsLayoutLocked; updateLockState() end, SetBox)
 local JoyToggle = mkTool("JOYSTICK: OFF", Theme.Red, nil, SetBox)
-JoyToggle.MouseButton1Click:Connect(function() IsJoystickEnabled = not IsJoystickEnabled; JoyContainer.Visible = IsJoystickEnabled; if IsJoystickEnabled then JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0) end; JoyToggle.Text = IsJoystickEnabled and "JOYSTICK: ON" or "JOYSTICK: OFF"; JoyToggle.BackgroundColor3 = IsJoystickEnabled and Theme.Green or Theme.Red; updateLockState() end)
+JoyToggle.MouseButton1Click:Connect(function() IsJoystickEnabled = not IsJoystickEnabled; JoyContainer.Visible = IsJoystickEnabled; if IsJoystickEnabled then JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0) end; JoyToggle.Text = IsJoystickEnabled and "JOYSTICK: ON" or "JOYSTICK: OFF"; JoyToggle.BackgroundColor3 = IsJoystickEnabled and Theme.Green or Theme.Red; updateLockState();  ResizerUpdateFunc()end)
 mkTool("ADD COMBO", Theme.Accent, function() local idx = #Combos + 1; CreateComboButtonFunc(idx, nil) end, SetBox)
 mkTool("DEL COMBO", Theme.Red, function() if #Combos<1 then return end; Combos[CurrentComboIndex].Button:Destroy(); table.remove(Combos, CurrentComboIndex); if #Combos > 0 then CurrentComboIndex=math.min(CurrentComboIndex, #Combos) else CurrentComboIndex=0 end; if ResizerUpdateFunc then ResizerUpdateFunc() end; RefreshEditorUI(); ShowNotification("Combo Deleted", Theme.Red); end, SetBox)
 
@@ -1282,7 +1279,9 @@ local VisBtn = Instance.new("TextButton"); VisBtn.Size=UDim2.new(1,0,0,28); VisB
 local ResizerIndex = 1
 ResizerUpdateFunc = function() 
     ResizerList = {}
-    table.insert(ResizerList, {Name="JOYSTICK", Obj=JoyOuter, Type="Joy"})
+    if IsJoystickEnabled then
+        table.insert(ResizerList, {Name="JOYSTICK", Obj=JoyOuter, Type="Joy"})
+    end
     table.insert(ResizerList, {Name="TOGGLE BTN", Obj=ToggleBtn, Type="Btn"})
     for i, c in ipairs(Combos) do table.insert(ResizerList, {Name=c.Name, Obj=c.Button, Type="Btn"}) end
     for id, vData in pairs(ActiveVirtualKeys) do table.insert(ResizerList, {Name=id, Obj=vData.Button, Type="Btn"}) end
@@ -1398,7 +1397,7 @@ local function SaveToFile(configName, data)
 end
 
 -- ==============================================================================
--- TAB SETTINGS & CALIBRATION (FIXED & SCROLLABLE)
+-- TAB SETTINGS & CALIBRATION
 -- ==============================================================================
 
 -- [[ 1. SETUP SCROLLING FRAME (Agar Rapi & Tidak Tembus) ]]
@@ -1483,19 +1482,20 @@ TrackConn(UserInputService.InputChanged:Connect(function(input)
 end))
 TrackConn(Camera:GetPropertyChangedSignal("ViewportSize"):Connect(function() UpdateCrosshairToVIM() end))
 
--- [[ 3. LOGIC CROSSHAIR JUMP (BLUE) - FIX VISIBILITY ]]
+-- [[ 3. LOGIC CROSSHAIR JUMP (BLUE) - PURE CALIBRATION ]]
 if JumpCrosshairUI then JumpCrosshairUI:Destroy() end 
+
 JumpCrosshairUI = Instance.new("ImageButton")
 JumpCrosshairUI.Name = "Jump_Crosshair"
 JumpCrosshairUI.Size = UDim2.new(0, 60, 0, 60)
-JumpCrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5)
+JumpCrosshairUI.AnchorPoint = Vector2.new(0.5, 0.5) -- Memastikan pusat UI sebagai titik acuan
 JumpCrosshairUI.BackgroundTransparency = 1
-JumpCrosshairUI.Image = "" -- Kosongkan image, kita pakai Frame garis
+JumpCrosshairUI.Image = "" 
 JumpCrosshairUI.Parent = ScreenGui
 JumpCrosshairUI.Visible = false
 JumpCrosshairUI.ZIndex = 9999
 
--- [PERBAIKAN] Menambahkan Garis Visual agar terlihat (seperti M1)
+-- Garis Crosshair Biru (Simetris Sempurna)
 local JCH_V = Instance.new("Frame"); JCH_V.Size=UDim2.new(0,2,1,0); JCH_V.Position=UDim2.new(0.5,-1,0,0); JCH_V.BackgroundColor3=Theme.Blue; JCH_V.Parent=JumpCrosshairUI; JCH_V.BorderSizePixel=0
 local JCH_H = Instance.new("Frame"); JCH_H.Size=UDim2.new(1,0,0,2); JCH_H.Position=UDim2.new(0,0,0.5,-1); JCH_H.BackgroundColor3=Theme.Blue; JCH_H.Parent=JumpCrosshairUI; JCH_H.BorderSizePixel=0
 
@@ -1503,25 +1503,25 @@ local function UpdateJumpVisual()
     if not JumpCrosshairUI.Visible then return end
     local jBtn = GetJumpButton()
     
-    if jBtn then
-        local absPos = jBtn.AbsolutePosition
-        local absSize = jBtn.AbsoluteSize
-        local targetX = absPos.X + (absSize.X / 2) + Jump_Offset.X
-        local targetY = absPos.Y + (absSize.Y / 2) + Jump_Offset.Y
-        JumpCrosshairUI.Position = UDim2.new(0, targetX, 0, targetY)
-    else
-        -- Fallback jika tombol Jump tidak ketemu, taruh di tengah kanan
-        local vp = Camera.ViewportSize
-        JumpCrosshairUI.Position = UDim2.new(0, vp.X * 0.8, 0, vp.Y * 0.8)
-    end
+    -- Ambil posisi tengah tombol asli
+    local absPos = jBtn.AbsolutePosition
+    local absSize = jBtn.AbsoluteSize
+    local baseX = absPos.X + (absSize.X / 2)
+    local baseY = absPos.Y + (absSize.Y / 2)
+
+    -- Tempatkan UI Target Biru tepat di atas tombol + Offset user
+    JumpCrosshairUI.Position = UDim2.new(0, baseX + Jump_Offset.X, 0, baseY + Jump_Offset.Y)
 end
+
+-- Update posisi setiap frame agar nempel terus ke tombol
 TrackConn(RunService.RenderStepped:Connect(UpdateJumpVisual))
 
 local draggingJump, dragInputJump
 JumpCrosshairUI.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         draggingJump = true
-        JCH_V.BackgroundColor3 = Theme.Green; JCH_H.BackgroundColor3 = Theme.Green -- Feedback Warna saat drag
+        -- Feedback Visual saat digeser (Warna Hijau)
+        JCH_V.BackgroundColor3 = Theme.Green; JCH_H.BackgroundColor3 = Theme.Green
         input.Changed:Connect(function() 
             if input.UserInputState == Enum.UserInputState.End then 
                 draggingJump = false 
@@ -1530,22 +1530,25 @@ JumpCrosshairUI.InputBegan:Connect(function(input)
         end)
     end
 end)
-JumpCrosshairUI.InputChanged:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInputJump = input end end)
+
+JumpCrosshairUI.InputChanged:Connect(function(input) 
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then 
+        dragInputJump = input 
+    end 
+end)
+
 TrackConn(UserInputService.InputChanged:Connect(function(input)
     if input == dragInputJump and draggingJump then
         local jBtn = GetJumpButton()
-        if jBtn then
-            local absPos = jBtn.AbsolutePosition
-            local absSize = jBtn.AbsoluteSize
-            local defaultCenterX = absPos.X + (absSize.X / 2)
-            local defaultCenterY = absPos.Y + (absSize.Y / 2)
-            Jump_Offset = Vector2.new(input.Position.X - defaultCenterX, input.Position.Y - defaultCenterY)
-            UpdateJumpVisual()
-        else
-            -- Logic drag manual jika tombol asli tidak ada
-            Jump_Offset = Jump_Offset + input.Delta
-            JumpCrosshairUI.Position = UDim2.new(0, JumpCrosshairUI.Position.X.Offset + input.Delta.X, 0, JumpCrosshairUI.Position.Y.Offset + input.Delta.Y)
-        end
+        
+        -- Hitung Pusat Referensi
+        local absPos = jBtn.AbsolutePosition
+        local absSize = jBtn.AbsoluteSize
+        local centerX = absPos.X + (absSize.X / 2)
+        local centerY = absPos.Y + (absSize.Y / 2)
+        
+        -- Selisih antara jari user dengan pusat tombol adalah Offset-nya
+        Jump_Offset = Vector2.new(input.Position.X - centerX, input.Position.Y - centerY)
     end
 end))
 
@@ -1663,99 +1666,7 @@ local SaveBtn = mkTool("SAVE CONFIG", Theme.Blue, function()
     end 
 end, P_Sys); SaveBtn.Size=UDim2.new(0.9,0,0,45)
 
-local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local successDecode, all = pcall(function() return HttpService:JSONDecode(r) end); if successDecode and type(all) == "table" then for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local del = Instance.new("TextButton"); del.Size=UDim2.new(1,0,0,30); del.Position=UDim2.new(0,0,0,70); del.BackgroundColor3=Theme.Red; del.Text="DELETE"; del.TextColor3=Theme.Bg; del.Parent=c2; createCorner(del,6); del.ZIndex=2004; del.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
-
-local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
-    ShowPopup("CONFIRM RESET?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
-        
-        yes.MouseButton1Click:Connect(function()
-            -- 1. HAPUS SEMUA TOMBOL VIRTUAL
-            for _, vData in pairs(ActiveVirtualKeys) do
-                if vData.Button then vData.Button:Destroy() end
-            end
-            ActiveVirtualKeys = {}
-            
-            -- 2. HAPUS SEMUA COMBO
-            for _, c in pairs(Combos) do 
-                if c.Button then c.Button:Destroy() end 
-            end
-            Combos = {}
-            CurrentComboIndex = 0 
-            
-            -- 3. RESET VARIABLE SYSTEM
-            CurrentConfigName = nil
-            SkillMode = "INSTANT"
-            ModeBtn.Text = "MODE: INSTANT"
-            ModeBtn.BackgroundColor3 = Theme.Green
-            CurrentSmartKeyData = nil
-            SelectedComboID = nil
-            IsLayoutLocked = false
-            
-            -- 4. RESET VISUAL (Default Settings)
-            GlobalTransparency = 0
-            if TKnob then TKnob.Position = UDim2.new(0, -6, 0.5, -6) end
-            IsJoystickEnabled = false
-            JoyContainer.Visible = false
-            if JoyToggle then
-                JoyToggle.Text = "JOYSTICK: OFF"
-                JoyToggle.BackgroundColor3 = Theme.Red
-            end
-            
-            -- 5. RESET POSISI UI (Factory Default)
-            Window.Position = UDim2.new(0.5, -300, 0.5, -170)
-            ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
-            JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
-            
-            local defJoySize = 140
-            JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
-            JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
-            createCorner(JoyOuter, defJoySize)
-
-            -- 6. RESET PILIHAN WARNA TOMBOL
-            for k, btn in pairs(VirtualKeySelectors) do
-                btn.BackgroundColor3 = Theme.Element
-                btn.TextColor3 = Theme.Text
-            end
-
-            -- 7. REFRESH SEMUA
-            UpdateTransparencyFunc()
-            updateLockState()
-            if ResizerUpdateFunc then ResizerUpdateFunc() end
-            RefreshEditorUI() 
-
-            ShowNotification("Factory Reset Complete!", Theme.Accent)
-            ClosePopup()
-        end)
-        
-        no.MouseButton1Click:Connect(ClosePopup)
-        return 50
-    end)
-end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
-
-local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
-    ShowPopup("CONFIRM EXIT?", function(c)
-        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
-        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
-        
-        yes.MouseButton1Click:Connect(function() 
-            isRunning = false 
-            IsAutoDashing = false 
-            -- MEMBERSIHKAN EVENT AGAR TIDAK LAG
-            for _, conn in pairs(GlobalConnections) do
-                if conn.Connected then conn:Disconnect() end
-            end
-            table.clear(GlobalConnections)
-            if ScreenGui then ScreenGui:Destroy() end 
-        end)
-        
-        no.MouseButton1Click:Connect(ClosePopup)
-        return 50
-    end)
-end, P_Sys); ExitBtn.Size=UDim2.new(0.9,0,0,45)
-
-local function LoadSpecific(configName)
+function LoadSpecific(configName)
     if not isfile(FileName) then return end
     
     -- 1. Baca File
@@ -1929,6 +1840,100 @@ local function LoadSpecific(configName)
         ShowNotification("Load Partial/Error", Theme.Red) 
     end
 end
+
+local LoadBtn = mkTool("LOAD CONFIG", Theme.Blue, function() ShowPopup("SELECT CONFIG", function(container) local scroll = Instance.new("ScrollingFrame"); scroll.Size=UDim2.new(1,0,0,150); scroll.BackgroundTransparency=1; scroll.Parent=container; scroll.ScrollBarThickness=3; scroll.ZIndex=2004; local layout = Instance.new("UIListLayout"); layout.Parent=scroll; layout.Padding=UDim.new(0,2); local count = 0; if isfile(FileName) then local s, r = pcall(function() return readfile(FileName) end); if s then local successDecode, all = pcall(function() return HttpService:JSONDecode(r) end); if successDecode and type(all) == "table" then for name, _ in pairs(all) do if name ~= "LastUsed" then count = count + 1; local b = Instance.new("TextButton"); b.Size=UDim2.new(1,0,0,30); b.BackgroundColor3=Theme.Bg; b.Text=name; b.TextColor3=Theme.SubText; b.Parent=scroll; createCorner(b,6); b.ZIndex=2004; b.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("MANAGE: "..name, function(c2) local l = Instance.new("TextButton"); l.Size=UDim2.new(1,0,0,30); l.BackgroundColor3=Theme.Green; l.Text="LOAD"; l.TextColor3=Theme.Bg; l.Parent=c2; createCorner(l,6); l.ZIndex=2004; l.MouseButton1Click:Connect(function() LoadSpecific(name); CurrentConfigName=name; ClosePopup() end); local r = Instance.new("TextButton"); r.Size=UDim2.new(1,0,0,30); r.Position=UDim2.new(0,0,0,35); r.BackgroundColor3=Theme.Blue; r.Text="RENAME"; r.TextColor3=Theme.Bg; r.Parent=c2; createCorner(r,6); r.ZIndex=2004; r.MouseButton1Click:Connect(function() ClosePopup(); ShowPopup("RENAME TO...", function(c3) local box = Instance.new("TextBox"); box.Size=UDim2.new(1,0,0,35); box.BackgroundColor3=Theme.Element; box.Text=""; box.PlaceholderText="New Name..."; box.TextColor3=Theme.Text; box.Parent=c3; createCorner(box,6); box.ZIndex=2004; local confirm = Instance.new("TextButton"); confirm.Size=UDim2.new(1,0,0,35); confirm.Position=UDim2.new(0,0,0,40); confirm.BackgroundColor3=Theme.Blue; confirm.Text="UPDATE"; confirm.TextColor3=Theme.Bg; confirm.Parent=c3; createCorner(confirm,6); confirm.ZIndex=2004; confirm.MouseButton1Click:Connect(function() if box.Text ~= "" and box.Text ~= name then local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[box.Text] = d[name]; d[name] = nil; if d["LastUsed"] == name then d["LastUsed"] = box.Text end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Renamed!", Theme.Blue) end end); return 80 end) end); local del = Instance.new("TextButton"); del.Size=UDim2.new(1,0,0,30); del.Position=UDim2.new(0,0,0,70); del.BackgroundColor3=Theme.Red; del.Text="DELETE"; del.TextColor3=Theme.Bg; del.Parent=c2; createCorner(del,6); del.ZIndex=2004; del.MouseButton1Click:Connect(function() local f = readfile(FileName); local d = HttpService:JSONDecode(f); d[name] = nil; if d["LastUsed"]==name then d["LastUsed"]=nil end; writefile(FileName, HttpService:JSONEncode(d)); ClosePopup(); ShowNotification("Deleted", Theme.Red) end); return 105 end) end) end end end end end; scroll.CanvasSize = UDim2.new(0,0,0, count * 32); return 150 end) end, P_Sys); LoadBtn.Size=UDim2.new(0.9,0,0,45)
+
+local ResetBtn = mkTool("RESET CONFIG", Theme.Red, function() 
+    ShowPopup("CONFIRM RESET?", function(c)
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
+        yes.MouseButton1Click:Connect(function()
+            -- 1. HAPUS SEMUA TOMBOL VIRTUAL
+            for _, vData in pairs(ActiveVirtualKeys) do
+                if vData.Button then vData.Button:Destroy() end
+            end
+            ActiveVirtualKeys = {}
+            
+            -- 2. HAPUS SEMUA COMBO
+            for _, c in pairs(Combos) do 
+                if c.Button then c.Button:Destroy() end 
+            end
+            Combos = {}
+            CurrentComboIndex = 0 
+            
+            -- 3. RESET VARIABLE SYSTEM
+            CurrentConfigName = nil
+            SkillMode = "INSTANT"
+            ModeBtn.Text = "MODE: INSTANT"
+            ModeBtn.BackgroundColor3 = Theme.Green
+            CurrentSmartKeyData = nil
+            SelectedComboID = nil
+            IsLayoutLocked = false
+            
+            -- 4. RESET VISUAL (Default Settings)
+            GlobalTransparency = 0
+            if TKnob then TKnob.Position = UDim2.new(0, -6, 0.5, -6) end
+            IsJoystickEnabled = false
+            JoyContainer.Visible = false
+            if JoyToggle then
+                JoyToggle.Text = "JOYSTICK: OFF"
+                JoyToggle.BackgroundColor3 = Theme.Red
+            end
+            
+            -- 5. RESET POSISI UI (Factory Default)
+            Window.Position = UDim2.new(0.5, -300, 0.5, -170)
+            ToggleBtn.Position = UDim2.new(0.02, 0, 0.3, 0)
+            JoyContainer.Position = UDim2.new(0.1, 0, 0.6, 0)
+            
+            local defJoySize = 140
+            JoyOuter.Size = UDim2.new(0, defJoySize, 0, defJoySize)
+            JoyContainer.Size = UDim2.new(0, defJoySize, 0, defJoySize + 30)
+            createCorner(JoyOuter, defJoySize)
+
+            -- 6. RESET PILIHAN WARNA TOMBOL
+            for k, btn in pairs(VirtualKeySelectors) do
+                btn.BackgroundColor3 = Theme.Element
+                btn.TextColor3 = Theme.Text
+            end
+
+            -- 7. REFRESH SEMUA
+            UpdateTransparencyFunc()
+            updateLockState()
+            if ResizerUpdateFunc then ResizerUpdateFunc() end
+            RefreshEditorUI() 
+
+            ShowNotification("Factory Reset Complete!", Theme.Accent)
+            ClosePopup()
+        end)
+        
+        no.MouseButton1Click:Connect(ClosePopup)
+        return 50
+    end)
+end, P_Sys); ResetBtn.Size=UDim2.new(0.9,0,0,45)
+
+local ExitBtn = mkTool("EXIT SCRIPT", Theme.Red, function() 
+    ShowPopup("CONFIRM EXIT?", function(c)
+        local yes = Instance.new("TextButton"); yes.Size=UDim2.new(0.45,0,0,40); yes.BackgroundColor3=Theme.Green; yes.Text="YES"; yes.TextColor3=Theme.Bg; yes.Parent=c; createCorner(yes,6); yes.ZIndex=2004
+        local no = Instance.new("TextButton"); no.Size=UDim2.new(0.45,0,0,40); no.Position=UDim2.new(0.55,0,0,0); no.BackgroundColor3=Theme.Red; no.Text="NO"; no.TextColor3=Theme.Bg; no.Parent=c; createCorner(no,6); no.ZIndex=2004
+        
+        yes.MouseButton1Click:Connect(function() 
+            isRunning = false 
+            IsAutoDashing = false 
+            -- MEMBERSIHKAN EVENT AGAR TIDAK LAG
+            for _, conn in pairs(GlobalConnections) do
+                if conn.Connected then conn:Disconnect() end
+            end
+            table.clear(GlobalConnections)
+            if ScreenGui then ScreenGui:Destroy() end 
+        end)
+        
+        no.MouseButton1Click:Connect(ClosePopup)
+        return 50
+    end)
+end, P_Sys); ExitBtn.Size=UDim2.new(0.9,0,0,45)
+
+
 
 -- === STARTUP ===
 ShowNotification("VELOX Mobile Loaded.", Theme.Accent)
