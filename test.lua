@@ -444,8 +444,8 @@ local function executeComboSequence(idx)
             -- Tekan Skill UI
             pressKey(step.Key) 
             
-            -- Tunggu render UI (0.05s) - Jika stop, langsung break
-            if not SmartWait(0.05) then break end
+            -- Tunggu render UI - Jika stop, langsung break
+            if not SmartWait(0.03) then break end
 
             -- [EKSEKUSI SERANGAN]
             if SkillMode == "SMART" and i == 1 then 
@@ -464,7 +464,7 @@ local function executeComboSequence(idx)
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     if not SmartWait(step.HoldTime) then break end
                 else
-                    if not SmartWait(0.05) then break end -- Tap delay
+                    if not SmartWait(0.03) then break end -- Tap delay
                 end
                 
                 -- TOUCH UP (Lepas)
@@ -493,7 +493,7 @@ local function executeComboSequence(idx)
                             
                             safetyCount = safetyCount + 1
                             if safetyCount > 30 then break end
-                            task.wait(0.05)
+                            task.wait(0.03)
                         end
                     end
                 end
@@ -504,7 +504,7 @@ local function executeComboSequence(idx)
             CurrentSmartKeyData = nil 
             
             -- Jeda antar skill (Responsif)
-            if not SmartWait(0.1) then break end
+            if not SmartWait(0.03) then break end
         end
         
         -- ==========================================================
@@ -527,7 +527,7 @@ local function executeComboSequence(idx)
                     pressKey(CurrentActiveKey)     -- Cancel Charge via UI
                     VIM:SendTouchEvent(5, 2, x, y) -- Lepas M1 via VIM
                     
-                    task.wait(0.05)
+                    task.wait(0.03)
                 end
             end
         end
