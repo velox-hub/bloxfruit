@@ -1058,7 +1058,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                     -- Cek senjata dulu sebelum skill (Esensial)
                     if slotIdx and not isWeaponReady(slotIdx) then
                         equipWeapon(slotIdx, false)
-                        task.wait(0.05)
+                        task.wait(0.03)
                     end
 
                     if SkillMode == "INSTANT" then
@@ -1067,6 +1067,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         local y = (vp.Y / 2) + M1_Offset.Y
                         
                         pressKey(kn) -- Visual Game
+                        task.wait(0.03)
                         VIM:SendTouchEvent(myTouchID, 0, x, y) -- Tekan VIM
                         
                         -- Warna Tetap Hitam
