@@ -400,9 +400,15 @@ local function executeComboSequence(idx)
             return isRunning -- Mengembalikan true jika masih jalan, false jika stop
         end
 
+        local currentTouchID = 10
+
         for i, step in ipairs(data.Steps) do
             -- [CHECK 1] Awal Langkah
             if not isRunning then break end
+
+            currentTouchID = currentTouchID + 1 
+            if currentTouchID > 20 then currentTouchID = 10 end -- Reset jika terlalu besar
+            
             CurrentActiveKey = step.Key
 
             local char = LocalPlayer.Character
@@ -430,7 +436,7 @@ local function executeComboSequence(idx)
                 end
 
                 -- TOUCH DOWN (Start Charge)
-                VIM:SendTouchEvent(5, 0, x, y) 
+                VIM:SendTouchEvent(currentTouchID, 0, x, y)
                 
                 -- PROSES HOLDING
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
@@ -441,7 +447,7 @@ local function executeComboSequence(idx)
                 end
                 
                 -- TOUCH UP (Lepas)
-                VIM:SendTouchEvent(5, 2, x, y)
+                VIM:SendTouchEvent(currentTouchID, 2, x, y)
                 
                 -- [VALIDASI WARNA - ANTI SKIP]
                 -- Hanya dijalankan jika script masih running
@@ -460,9 +466,9 @@ local function executeComboSequence(idx)
                         -- Loop Spam jika nyangkut
                         local safetyCount = 0
                         while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
-                            VIM:SendTouchEvent(5, 0, x, y)
+                            VIM:SendTouchEvent(currentTouchID, 0, x, y)
                             task.wait(0.03) 
-                            VIM:SendTouchEvent(5, 2, x, y)
+                            VIM:SendTouchEvent(currentTouchID, 2, x, y)
                             
                             safetyCount = safetyCount + 1
                             if safetyCount > 30 then break end
@@ -470,10 +476,7 @@ local function executeComboSequence(idx)
                         end
                     end
                 end
-            end 
-            
-            -- Cleanup Langkah Ini
-            VIM:SendTouchEvent(5, 2, x, y)
+            end
             CurrentSmartKeyData = nil 
             
             -- Jeda antar skill (Responsif)
