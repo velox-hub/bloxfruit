@@ -400,14 +400,14 @@ local function executeComboSequence(idx)
             return isRunning -- Mengembalikan true jika masih jalan, false jika stop
         end
 
-        local currentTouchID = 10
+        local currentTouchID = 5
 
         for i, step in ipairs(data.Steps) do
             -- [CHECK 1] Awal Langkah
             if not isRunning then break end
 
             currentTouchID = currentTouchID + 1 
-            if currentTouchID > 20 then currentTouchID = 10 end -- Reset jika terlalu besar
+             -- Reset jika terlalu besar
             
             CurrentActiveKey = step.Key
 
