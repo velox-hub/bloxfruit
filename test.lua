@@ -230,34 +230,6 @@ UpdateTransparencyFunc = function()
     end
 end
 
-local function IsCharacterBusy()
-    local char = LocalPlayer.Character
-    if not char then return false end
-    
-    local hum = char:FindFirstChild("Humanoid")
-    local animator = hum and hum:FindFirstChild("Animator")
-    
-    if animator then
-        for _, track in pairs(animator:GetPlayingAnimationTracks()) do
-            local p = track.Priority
-            if p == Enum.AnimationPriority.Action or 
-               p == Enum.AnimationPriority.Action2 or 
-               p == Enum.AnimationPriority.Action3 or 
-               p == Enum.AnimationPriority.Action4 then
-                
-                if track.Length > 0 and (track.TimePosition < track.Length - 0.15) then
-                    return true 
-                end
-            end
-        end
-    end
-    
-    if char:FindFirstChild("Stun") and char.Stun.Value > 0 then return true end
-    if char:FindFirstChild("Busy") and char.Busy.Value then return true end
-    
-    return false 
-end
-
 local function updateLockState()
     if JoyDrag then JoyDrag.Visible = (not IsLayoutLocked) and IsJoystickEnabled end
     if LockBtn then
