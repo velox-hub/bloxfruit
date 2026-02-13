@@ -435,6 +435,7 @@ local function executeComboSequence(idx)
                 -- PROSES HOLDING
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     if not SmartWait(step.HoldTime) then break end
+                    task.wait(0.03)
                 else
                     if not SmartWait(0.03) then break end -- Tap delay
                 end
@@ -1041,6 +1042,7 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                         pressKey(kn) -- Visual Game
                         task.wait(0.03)
                         VIM:SendTouchEvent(myTouchID, 0, x, y) -- Tekan VIM
+                        task.wait(0.03)
                         
                         -- Warna Tetap Hitam
                         btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
