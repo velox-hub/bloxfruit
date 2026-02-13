@@ -940,18 +940,22 @@ end))
 -- ==============================================================================
 -- [8] MANAGER (ADD/REMOVE BUTTONS)
 -- ==============================================================================
+
+                
+
+
 local function toggleVirtualKey(keyName, slotIdx, customName)
     local id = customName or keyName
     local kn = tostring(keyName)
     
-    -- [1] ID UNIK (Penting agar tidak bentrok)
+    -- [1] ID UNIK SEDERHANA (Agar Skill tidak bentrok dengan Jump/Analog)
     local myTouchID = 0
     if id == "Jump" then myTouchID = 50
     elseif id == "Dodge" then myTouchID = 51
     elseif slotIdx then myTouchID = 10 + slotIdx 
     else myTouchID = (string.byte(kn) % 20) + 20 end 
 
-    -- Hapus tombol lama jika ada
+    -- Bersihkan tombol lama jika ada
     if ActiveVirtualKeys[id] then 
         if ActiveVirtualKeys[id].Button then ActiveVirtualKeys[id].Button:Destroy() end
         ActiveVirtualKeys[id]=nil
@@ -959,10 +963,10 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         if SkillMode == "SMART" and CurrentSmartKeyData and CurrentSmartKeyData.ID == id then CurrentSmartKeyData = nil end
         UpdateTransparencyFunc(); if ResizerUpdateFunc then ResizerUpdateFunc() end
     else
-        -- [2] SETUP TOMBOL VISUAL
+        -- [2] SETUP VISUAL TOMBOL
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 50, 0, 50); btn.Position = UDim2.new(0.5, 0, 0.5, 0); 
-        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); -- Default Hitam
+        btn.BackgroundColor3 = Color3.fromRGB(0, 0, 0); -- Hitam Polos
         btn.Text = id; btn.TextColor3 = Theme.Accent; btn.Font = Enum.Font.GothamBold; btn.TextSize = 20; btn.TextScaled = true; btn.Parent = ScreenGui; btn.Selectable = false; btn.ZIndex = 60
         createCorner(btn, 12); createStroke(btn, Theme.Accent); MakeDraggable(btn, nil)
         
@@ -970,120 +974,110 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
         local isWeaponKey = (kn == "1" or kn == "2" or kn == "3" or kn == "4")
         local isSkillKey  = table.find({"Z","X","C","V","F"}, kn)
         
-        -- STATUS VARIABEL (Sederhana)
-        local isActive = false -- Untuk Toggle (Nyala/Mati)
-        local isHolding = false -- Untuk Hold (Ditekan/Dilepas)
+        -- VARIABEL STATUS SEDERHANA
+        local isSpamming = false -- Untuk Toggle & Hold Jump/Dodge
 
-        -- [HELPER] Fungsi Spam Klik Sederhana (Untuk Jump/Dodge/M1)
-        local function StartSpamLogic(targetFunc)
+        -- [HELPER] Logic Spam (Looping Klik Cepat)
+        -- Digunakan untuk Jump/Dodge/M1 agar bisa ditahan atau di-toggle
+        local function StartSpam(actionFunc)
+            isSpamming = true
+            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
+            
             task.spawn(function()
-                while (isActive or isHolding) and ActiveVirtualKeys[id] do
-                    targetFunc()
-                    task.wait(0.15) -- Spam setiap 0.15 detik
+                while isSpamming and ActiveVirtualKeys[id] do
+                    actionFunc()
+                    task.wait(0.15) -- Kecepatan Spam (0.15 detik)
                 end
-                -- Reset Warna saat berhenti
+                -- Reset warna saat berhenti
                 btn.BackgroundColor3 = Color3.new(0,0,0)
                 btn.TextColor3 = Theme.Accent
             end)
         end
 
-        -- [HELPER] Fungsi Eksekusi Jump (Tanpa cek aneh2)
-        local function DoJump()
-            local jb = GetJumpButton()
-            if jb then
-                local fx = jb.AbsolutePosition.X + (jb.AbsoluteSize.X/2) + Jump_Offset.X
-                local fy = jb.AbsolutePosition.Y + (jb.AbsoluteSize.Y/2) + Jump_Offset.Y
-                VIM:SendTouchEvent(myTouchID, 0, fx, fy)
-                task.wait(0.05)
-                VIM:SendTouchEvent(myTouchID, 2, fx, fy)
-            end
+        -- [HELPER] Fungsi Eksekusi VIM
+        local function DoVIMClick(x, y)
+            VIM:SendTouchEvent(myTouchID, 0, x, y) -- Tekan
+            task.wait(0.05)
+            VIM:SendTouchEvent(myTouchID, 2, x, y) -- Lepas
         end
 
-        -- [3] EVENT SAAT DITEKAN
+        local function GetVIMTarget()
+            local vp = Camera.ViewportSize
+            -- Target default adalah tengah layar + offset kalibrasi M1
+            return (vp.X / 2) + M1_Offset.X, (vp.Y / 2) + M1_Offset.Y
+        end
+
+        -- [3] EVENT SAAT TOMBOL DITEKAN (INPUT BEGAN)
         btn.InputBegan:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- A. WEAPON (Sederhana: Klik langsung equip)
+                -- A. WEAPON (Langsung Equip)
                 if isWeaponKey then
                     equipWeapon(slotIdx, true)
                     return
                 end
 
-                -- B. JUMP / DODGE / M1 (Logic Gabungan Sederhana)
+                -- B. JUMP / DODGE / M1 (Logic Spam Sederhana)
                 if id == "Jump" or id == "Dodge" or id == "M1" then
                     local mode = "HOLD"
                     if id == "Jump" then mode = Settings_Mode_Jump
                     elseif id == "Dodge" then mode = Settings_Mode_Dash
                     elseif id == "M1" then mode = Settings_Mode_M1 end
 
-                    if mode == "TOGGLE" then
-                        isActive = not isActive
-                        if isActive then
-                            btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                            if id == "Jump" then StartSpamLogic(DoJump)
-                            elseif id == "Dodge" then StartSpamLogic(TriggerDodge)
-                            elseif id == "M1" then StartSpamLogic(TapM1) end
-                        else
-                            btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
+                    local action = nil
+                    if id == "Jump" then 
+                        action = function() 
+                            local jb = GetJumpButton(); 
+                            if jb then DoVIMClick(jb.AbsolutePosition.X + jb.AbsoluteSize.X/2 + Jump_Offset.X, jb.AbsolutePosition.Y + jb.AbsoluteSize.Y/2 + Jump_Offset.Y) end 
                         end
+                    elseif id == "Dodge" then action = TriggerDodge
+                    elseif id == "M1" then action = TapM1 end
+
+                    if mode == "TOGGLE" then
+                        -- Jika sudah nyala -> Matikan. Jika mati -> Nyalakan.
+                        if isSpamming then isSpamming = false else StartSpam(action) end
                     else
-                        -- MODE HOLD
-                        isHolding = true
-                        btn.BackgroundColor3 = Theme.Green; btn.TextColor3 = Theme.Bg
-                        if id == "Jump" then StartSpamLogic(DoJump)
-                        elseif id == "Dodge" then StartSpamLogic(TriggerDodge)
-                        elseif id == "M1" then StartSpamLogic(TapM1) end
+                        -- Mode HOLD: Nyalakan Loop
+                        StartSpam(action)
                     end
                     return
                 end
 
-                -- C. SKILL (Z, X, C, V, F)
-                if isSkillKey then
-                    if slotIdx and not isWeaponReady(slotIdx) then
-                        equipWeapon(slotIdx, false); task.wait(0.05)
-                    end
-
-                    if SkillMode == "INSTANT" then
-                        -- [INSTANT MODE] Tahan = Tahan Skill
-                        pressKey(kn) -- Visual game
-                        
-                        -- FORCE Warna Hitam (Sesuai Request)
-                        btn.BackgroundColor3 = Color3.new(0,0,0) 
-                        btn.TextColor3 = Theme.Accent
-
-                        local vp = Camera.ViewportSize
-                        local x, y = (vp.X/2) + M1_Offset.X, (vp.Y/2) + M1_Offset.Y
-                        
-                        -- Kirim Touch Down (Tahan)
-                        VIM:SendTouchEvent(myTouchID, 0, x, y)
-                    else 
-                        -- [SMART MODE] (Sudah Benar)
-                        pressKey(kn) 
-                        CurrentSmartKeyData = vData; SmartTouchObject = input 
-                        btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
-                    end
+                -- C. SKILL INSTANT (Z, X, C, V, F) - LOGIKA MURNI
+                if isSkillKey and SkillMode == "INSTANT" then
+                    -- 1. Hitung Posisi
+                    local tx, ty = GetVIMTarget()
+                    
+                    -- 2. Kirim Sinyal TEKAN (Down)
+                    VIM:SendTouchEvent(myTouchID, 0, tx, ty)
+                    
+                    -- 3. Visual (Tetap Hitam, Sesuai Request)
+                    btn.BackgroundColor3 = Color3.new(0,0,0)
+                    btn.TextColor3 = Theme.Accent
+                elseif isSkillKey and SkillMode == "SMART" then
+                    pressKey(kn); CurrentSmartKeyData = vData; SmartTouchObject = input 
+                    btn.BackgroundColor3 = Theme.Accent; btn.TextColor3 = Color3.new(0,0,0)
                 end
             end
         end)
 
-        -- [4] EVENT SAAT DILEPAS
+        -- [4] EVENT SAAT TOMBOL DILEPAS (INPUT ENDED)
         btn.InputEnded:Connect(function(input)
             if input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1 then
                 
-                -- Matikan Mode Hold (Jump/Dodge/M1)
-                isHolding = false 
+                -- Matikan Spam jika Mode HOLD (Jump/Dodge/M1)
+                if (id == "Jump" and Settings_Mode_Jump == "HOLD") or 
+                   (id == "Dodge" and Settings_Mode_Dash == "HOLD") or 
+                   (id == "M1" and Settings_Mode_M1 == "HOLD") then
+                    isSpamming = false
+                end
                 
-                -- Lepas Skill Instant
+                -- Lepas Skill Instant - LOGIKA MURNI
                 if isSkillKey and SkillMode == "INSTANT" then
-                    local vp = Camera.ViewportSize
-                    local x, y = (vp.X/2) + M1_Offset.X, (vp.Y/2) + M1_Offset.Y
+                    local tx, ty = GetVIMTarget()
                     
-                    -- Kirim Touch Up (Lepas)
-                    VIM:SendTouchEvent(myTouchID, 2, x, y)
-                    
-                    -- Reset Warna
-                    btn.BackgroundColor3 = Color3.new(0,0,0)
-                    btn.TextColor3 = Theme.Accent
+                    -- Kirim Sinyal LEPAS (Up)
+                    VIM:SendTouchEvent(myTouchID, 2, tx, ty)
                     
                 elseif SkillMode == "SMART" then
                     btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
@@ -1092,15 +1086,14 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
             end
         end)
         
-        -- [5] SAFETY: Jari Tergelincir (MouseLeave)
-        -- Sederhana saja: Jika jari keluar tombol, matikan hold.
+        -- [5] SAFETY SIMPLE (MouseLeave)
+        -- Hanya untuk memastikan skill tidak nyangkut jika jari kepeleset keluar
         btn.MouseLeave:Connect(function()
-            isHolding = false
+            if (id == "Jump" and Settings_Mode_Jump == "HOLD") then isSpamming = false end
+            
             if isSkillKey and SkillMode == "INSTANT" then
-                local vp = Camera.ViewportSize
-                local x, y = (vp.X/2) + M1_Offset.X, (vp.Y/2) + M1_Offset.Y
-                VIM:SendTouchEvent(myTouchID, 2, x, y) -- Pastikan skill lepas
-                btn.BackgroundColor3 = Color3.new(0,0,0)
+                local tx, ty = GetVIMTarget()
+                VIM:SendTouchEvent(myTouchID, 2, tx, ty) -- Pastikan lepas
             end
         end)
         
