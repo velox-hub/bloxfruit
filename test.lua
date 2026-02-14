@@ -482,9 +482,9 @@ local function executeComboSequence(idx)
         isRunning = false
         btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
         if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
-        end
     end)
 end
+
 
 local SmartTouchObject = nil 
 
