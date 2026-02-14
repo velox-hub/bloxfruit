@@ -440,14 +440,11 @@ local function executeComboSequence(idx)
                 -- Loop ini jalan TERUS sampai warna berubah (Tanpa Batas/Safety Count)
                 while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
                     
-                    -- A. LEPAS DULU (Reset Input)
-                    VIM:SendTouchEvent(fixedTouchID, 2, x, y)
-                    
                     -- B. TEKAN (Down)
                     VIM:SendTouchEvent(fixedTouchID, 0, x, y)
                     
                     -- C. TUNGGU (Biar game proses input & ubah warna)
-                    task.wait(0.05) 
+                    task.wait(0.03) 
                     
                     -- Jika warna berubah di frame ini, loop berhenti.
                     -- Posisi terakhir adalah B (TEKAN/DOWN).
