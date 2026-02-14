@@ -434,39 +434,44 @@ local function executeComboSequence(idx)
             local targetBtn = GetMobileButtonObj(step.Key)
 
             if targetBtn then
-                -- ====================================================
-                -- FASE 1: SPAM TRIGGER (Lepas -> Tekan -> Cek)
-                -- ====================================================
-                -- Loop ini jalan TERUS sampai warna berubah (Tanpa Batas/Safety Count)
-                while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
                     
-                    -- B. TEKAN (Down)
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    -- [MODE HOLD / TAHAN LAMA]
+                    -- Langsung tekan dan tahan (Tanpa spam Tap, karena akan membatalkan charge)
+                    
+                    -- 1. Tekan (Down)
                     VIM:SendTouchEvent(fixedTouchID, 0, x, y)
                     
-                    -- C. TUNGGU (Biar game proses input & ubah warna)
-                    task.wait(0.03) 
-                    
-                    -- Jika warna berubah di frame ini, loop berhenti.
-                    -- Posisi terakhir adalah B (TEKAN/DOWN).
-                end
-                
-                -- ====================================================
-                -- FASE 2: HOLD TIME (Eksekusi Akhir)
-                -- ====================================================
-                
-                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    -- [MODE HOLD]
-                    -- Karena posisi sudah DOWN, kita tinggal TUNGGU durasi hold.
+                    -- 2. Tahan Sesuai Durasi
                     local holdTimer = tick()
                     while (tick() - holdTimer) < step.HoldTime do
                         if not isRunning then break end
                         task.wait()
                     end
+                    
+                    -- 3. Lepas (Up) -> Skill Keluar
+                    VIM:SendTouchEvent(fixedTouchID, 2, x, y)
+                    
+            else
+                -- ====================================================
+                while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
+                        
+                        -- A. TEKAN (Down)
+                    VIM:SendTouchEvent(fixedTouchID, 0, x, y)
+                        
+                        -- B. HOLD SEBENTAR (PENTING: Agar input terbaca server)
+                    task.wait(0.1) 
+                        
+                        -- C. LEPAS (Up) -> Memicu Skill
+                    VIM:SendTouchEvent(fixedTouchID, 2, x, y)
+                        
+                        -- D. CEK WARNA
+                        -- Beri waktu sedikit untuk UI update warna
+                    task.wait(0.05) 
+                    if targetBtn.BackgroundColor3 ~= READY_COLOR then 
+                        break -- Skill Keluar!
+                    end
                 end
-                
-                -- [AKHIR SKILL]
-                -- Baik Mode Hold maupun Tap, WAJIB lepas di akhir
-                VIM:SendTouchEvent(fixedTouchID, 2, x, y)
             end
             
             CurrentSmartKeyData = nil 
