@@ -371,150 +371,117 @@ local function executeComboSequence(idx)
     local data = Combos[idx]
     if not data or not data.Button then return end
     
-    -- [OPTIMASI 1] Toggle Cepat
+    -- [TOGGLE ON/OFF]
     if isRunning then 
-        isRunning = false
-        return 
+        isRunning = false; return 
     end
     
     isRunning = true
     
     local btn = data.Button
-    btn.Text = "STOP"; btn.BackgroundColor3 = Theme.Red
+    -- [1] SIMPAN TEKS ASLI
+    local originalText = btn.Text 
+    
+    btn.Text = "STOP"
+    btn.BackgroundColor3 = Theme.Red
     if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Red end
     
     task.spawn(function()
-        local vp = Camera.ViewportSize
-        local x = (vp.X / 2) + M1_Offset.X
-        local y = (vp.Y / 2) + M1_Offset.Y
-        local READY_COLOR = Color3.fromRGB(0, 255, 255)
-        local CurrentActiveKey = nil
-
-        -- [HELPER] Fungsi Tunggu Pintar (Hemat CPU & Responsif)
-        local function SmartWait(duration)
-            local t = tick()
-            while (tick() - t) < duration do
-                if not isRunning then return false end
-                task.wait() -- Yield sebentar agar tidak freeze
-            end
-            return isRunning -- Mengembalikan true jika masih jalan, false jika stop
-        end
-
-        local currentTouchID = 5
+        -- Definisi Warna Ready (Cyan)
+        local READY_COLOR = Color3.fromRGB(0, 255, 255) 
+        local fixedTouchID = 6 -- ID TETAP 6
 
         for i, step in ipairs(data.Steps) do
-            -- [CHECK 1] Awal Langkah
+            -- Cek Stop
             if not isRunning then break end
 
-            currentTouchID = currentTouchID + 1 
-             -- Reset jika terlalu besar
-            
             CurrentActiveKey = step.Key
 
+            -- Cek Karakter
             local char = LocalPlayer.Character
             if not char or not char:FindFirstChild("Humanoid") or char.Humanoid.Health <= 0 then 
                 isRunning = false; break 
             end
             
-            -- [PERSIAPAN]
-            if not isWeaponReady(step.Slot) then equipWeapon(step.Slot, false) end
+            -- Cek & Equip Senjata
+            if not isWeaponReady(step.Slot) then 
+                equipWeapon(step.Slot, false) 
+                task.wait(0.05) 
+            end
             
-            -- Tekan Skill UI
+            -- [1] VISUAL DULU (PressKey)
             pressKey(step.Key) 
-            
-            -- Tunggu render UI - Jika stop, langsung break
-            if not SmartWait(0.03) then break end
 
-            -- [EKSEKUSI SERANGAN]
+            -- [2] LOGIKA SMART MODE & DELAY (Sebelum VIM Ditekan)
             if SkillMode == "SMART" and i == 1 then 
+                -- Tunggu user menekan layar (Hold Start)
                 while not IsSmartHolding and isRunning do task.wait() end
+                -- Tunggu user melepas layar (Hold Release)
                 while IsSmartHolding and isRunning do task.wait() end
             else 
-                -- START DELAY (User defined)
+                -- START DELAY (User defined) - Terjadi SETELAH pressKey
                 if step.Delay and step.Delay > 0 then 
-                    if not SmartWait(step.Delay) then break end
+                    task.wait(step.Delay)
                 end
+            end
 
-                -- TOUCH DOWN (Start Charge)
-                VIM:SendTouchEvent(currentTouchID, 0, x, y)
-                
-                -- PROSES HOLDING
-                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    if not SmartWait(step.HoldTime) then break end
-                    task.wait(0.03)
-                else
-                    if not SmartWait(0.03) then break end -- Tap delay
+            -- Hitung Posisi VIM
+            local vp = Camera.ViewportSize
+            local x = (vp.X / 2) + M1_Offset.X
+            local y = (vp.Y / 2) + M1_Offset.Y
+
+            -- Ambil Tombol UI (Pasti Ketemu Sesuai Request)
+            local targetBtn = GetMobileButtonObj(step.Key)
+
+            if targetBtn then
+                -- ====================================================
+                -- FASE 1: SPAM TRIGGER (Lepas -> Tekan -> Cek)
+                -- ====================================================
+                -- Loop ini jalan TERUS sampai warna berubah (Tanpa Batas/Safety Count)
+                while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
+                    
+                    -- A. LEPAS DULU (Reset Input)
+                    VIM:SendTouchEvent(fixedTouchID, 2, x, y)
+                    
+                    -- B. TEKAN (Down)
+                    VIM:SendTouchEvent(fixedTouchID, 0, x, y)
+                    
+                    -- C. TUNGGU (Biar game proses input & ubah warna)
+                    task.wait(0.05) 
+                    
+                    -- Jika warna berubah di frame ini, loop berhenti.
+                    -- Posisi terakhir adalah B (TEKAN/DOWN).
                 end
                 
-                -- TOUCH UP (Lepas)
-                VIM:SendTouchEvent(currentTouchID, 2, x, y)
+                -- ====================================================
+                -- FASE 2: HOLD TIME (Eksekusi Akhir)
+                -- ====================================================
                 
-                -- [VALIDASI WARNA - ANTI SKIP]
-                -- Hanya dijalankan jika script masih running
-                if isRunning then
-                    local targetBtn = GetMobileButtonObj(step.Key)
-                    if targetBtn then
-                        -- Tunggu max 0.15s untuk melihat perubahan warna
-                        local waitRender = 0
-                        while waitRender < 5 do
-                            if not isRunning then break end
-                            if targetBtn.BackgroundColor3 == READY_COLOR then break end
-                            task.wait(0.03)
-                            waitRender = waitRender + 1
-                        end
-                        
-                        -- Loop Spam jika nyangkut
-                        local safetyCount = 0
-                        while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
-                            VIM:SendTouchEvent(currentTouchID, 0, x, y)
-                            task.wait(0.03) 
-                            VIM:SendTouchEvent(currentTouchID, 2, x, y)
-                            
-                            safetyCount = safetyCount + 1
-                            if safetyCount > 30 then break end
-                            task.wait(0.03)
-                        end
+                if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                    -- [MODE HOLD]
+                    -- Karena posisi sudah DOWN, kita tinggal TUNGGU durasi hold.
+                    local holdTimer = tick()
+                    while (tick() - holdTimer) < step.HoldTime do
+                        if not isRunning then break end
+                        task.wait()
                     end
                 end
+                
+                -- [AKHIR SKILL]
+                -- Baik Mode Hold maupun Tap, WAJIB lepas di akhir
+                VIM:SendTouchEvent(fixedTouchID, 2, x, y)
             end
+            
             CurrentSmartKeyData = nil 
             
-            -- Jeda antar skill (Responsif)
-            if not SmartWait(0.03) then break end
-        end
-        
-        -- ==========================================================
-        -- [CLEANUP / EMERGENCY STOP - OPTIMIZED]
-        -- ==========================================================
-        
-        -- 1. Pastikan input sentuhan bersih
-        VIM:SendTouchEvent(5, 2, x, y) 
-
-        -- 2. SMART FORCE RESET UI (Hanya jika stop mendadak)
-        if CurrentActiveKey then
-            local targetBtn = GetMobileButtonObj(CurrentActiveKey)
-            
-            -- Cek apakah skill terakhir masih nyangkut (Cyan)
-            if targetBtn and targetBtn.BackgroundColor3 == READY_COLOR then
-                -- Lakukan retry ringan (maks 3x)
-                for _ = 1, 3 do
-                    if targetBtn.BackgroundColor3 ~= READY_COLOR then break end
-                    
-                    pressKey(CurrentActiveKey)     -- Cancel Charge via UI
-                    VIM:SendTouchEvent(5, 2, x, y) -- Lepas M1 via VIM
-                    
-                    task.wait(0.03)
-                end
-            end
+            -- Jeda kecil antar skill (Default, jika tidak ada delay)
+            if i < #data.Steps then task.wait(0.05) end
         end
 
+        -- [3] SELESAI -> KEMBALIKAN KE TEKS ASLI
         isRunning = false
-        SelectedComboID = nil
-        CurrentSmartKeyData = nil
-        
-        if btn then 
-            btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
-            if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
+        btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
+        if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
         end
     end)
 end
