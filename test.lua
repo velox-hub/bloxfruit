@@ -365,6 +365,7 @@ end
 
 local IsSmartHolding = false 
 
+
 local function executeComboSequence(idx)
     if isChatting() then return end 
 
@@ -434,7 +435,7 @@ local function executeComboSequence(idx)
             local targetBtn = GetMobileButtonObj(step.Key)
 
             if targetBtn then
-                    
+                -- Cek Mode: Hold vs Tap
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
                     -- [MODE HOLD / TAHAN LAMA]
                     -- Langsung tekan dan tahan (Tanpa spam Tap, karena akan membatalkan charge)
@@ -452,27 +453,29 @@ local function executeComboSequence(idx)
                     -- 3. Lepas (Up) -> Skill Keluar
                     VIM:SendTouchEvent(fixedTouchID, 2, x, y)
                     
-            else
-                -- ====================================================
-                while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
+                else
+                    -- [MODE TAP / SPAM]
+                    -- ====================================================
+                    while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
                         
                         -- A. TEKAN (Down)
-                    VIM:SendTouchEvent(fixedTouchID, 0, x, y)
+                        VIM:SendTouchEvent(fixedTouchID, 0, x, y)
                         
                         -- B. HOLD SEBENTAR (PENTING: Agar input terbaca server)
-                    task.wait(0.1) 
+                        task.wait(0.1) 
                         
                         -- C. LEPAS (Up) -> Memicu Skill
-                    VIM:SendTouchEvent(fixedTouchID, 2, x, y)
+                        VIM:SendTouchEvent(fixedTouchID, 2, x, y)
                         
                         -- D. CEK WARNA
                         -- Beri waktu sedikit untuk UI update warna
-                    task.wait(0.05) 
-                    if targetBtn.BackgroundColor3 ~= READY_COLOR then 
-                        break -- Skill Keluar!
+                        task.wait(0.05) 
+                        if targetBtn.BackgroundColor3 ~= READY_COLOR then 
+                            break -- Skill Keluar!
+                        end
                     end
                 end
-            end
+            end -- <--- INI ADALAH 'END' YANG ANDA LUPAKAN UNTUK 'if targetBtn then'
             
             CurrentSmartKeyData = nil 
             
@@ -482,7 +485,8 @@ local function executeComboSequence(idx)
 
         -- [3] SELESAI -> KEMBALIKAN KE TEKS ASLI
         isRunning = false
-        btn.Text = data.Name; btn.BackgroundColor3 = Theme.Sidebar
+        btn.Text = data.Name
+        btn.BackgroundColor3 = Theme.Sidebar
         if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
     end)
 end
