@@ -380,8 +380,7 @@ local function executeComboSequence(idx)
     isRunning = true
     
     local btn = data.Button
-    -- [1] SIMPAN TEKS ASLI
-    local originalText = btn.Text 
+    local currentTouchID = 5
     
     btn.Text = "STOP"
     btn.BackgroundColor3 = Theme.Red
@@ -396,6 +395,9 @@ local function executeComboSequence(idx)
             -- Cek Stop
             if not isRunning then break end
 
+            currentTouchID = currentTouchID + 1
+            if currentTouchID > 20 then currentTouchID = 6 end
+
             CurrentActiveKey = step.Key
 
             -- Cek Karakter
@@ -407,7 +409,7 @@ local function executeComboSequence(idx)
             -- Cek & Equip Senjata
             if not isWeaponReady(step.Slot) then 
                 equipWeapon(step.Slot, false) 
-                task.wait(0.05) 
+                task.wait(0.03) 
             end
             
             -- [1] VISUAL DULU (PressKey)
@@ -441,7 +443,7 @@ local function executeComboSequence(idx)
                     -- Langsung tekan dan tahan (Tanpa spam Tap, karena akan membatalkan charge)
                     
                     -- 1. Tekan (Down)
-                    VIM:SendTouchEvent(fixedTouchID, 0, x, y)
+                    VIM:SendTouchEvent(currentTouchID, 0, x, y)
                     
                     -- 2. Tahan Sesuai Durasi
                     local holdTimer = tick()
@@ -451,7 +453,7 @@ local function executeComboSequence(idx)
                     end
                     
                     -- 3. Lepas (Up) -> Skill Keluar
-                    VIM:SendTouchEvent(fixedTouchID, 2, x, y)
+                    VIM:SendTouchEvent(currentTouchID, 2, x, y)
                     
                 else
                     -- [MODE TAP / SPAM]
@@ -459,17 +461,17 @@ local function executeComboSequence(idx)
                     while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
                         
                         -- A. TEKAN (Down)
-                        VIM:SendTouchEvent(fixedTouchID, 0, x, y)
+                        VIM:SendTouchEvent(currentTouchID, 0, x, y)
                         
                         -- B. HOLD SEBENTAR (PENTING: Agar input terbaca server)
-                        task.wait(0.1) 
+                        task.wait(0.03) 
                         
                         -- C. LEPAS (Up) -> Memicu Skill
-                        VIM:SendTouchEvent(fixedTouchID, 2, x, y)
+                        VIM:SendTouchEvent(currentTouchID, 2, x, y)
                         
                         -- D. CEK WARNA
                         -- Beri waktu sedikit untuk UI update warna
-                        task.wait(0.05) 
+                        task.wait(0.03) 
                         if targetBtn.BackgroundColor3 ~= READY_COLOR then 
                             break -- Skill Keluar!
                         end
@@ -480,7 +482,7 @@ local function executeComboSequence(idx)
             CurrentSmartKeyData = nil 
             
             -- Jeda kecil antar skill (Default, jika tidak ada delay)
-            if i < #data.Steps then task.wait(0.05) end
+            task.wait(0.03) 
         end
 
         -- [3] SELESAI -> KEMBALIKAN KE TEKS ASLI
