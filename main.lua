@@ -720,7 +720,7 @@ JoyContainer.ZIndex = 50
 JoyDrag = Instance.new("TextButton")
 JoyDrag.Size = UDim2.new(0, 60, 0, 25)
 JoyDrag.Position = UDim2.new(0.5, -30, 0, -10)
-JoyDrag.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+JoyDrag.BackgroundColor3 = Color3.new(0, 0, 0)
 JoyDrag.Text = "DRAG"
 JoyDrag.TextColor3 = Theme.Accent
 JoyDrag.Font = Enum.Font.GothamBold
@@ -729,6 +729,7 @@ JoyDrag.Parent = JoyContainer
 JoyDrag.Selectable = false
 JoyDrag.Visible = false
 createCorner(JoyDrag, 6)
+createStroke(JoyDrag, Theme.Accent)
 JoyDrag.ZIndex = 52
 
 JoyOuter = Instance.new("ImageButton")
@@ -742,7 +743,7 @@ JoyOuter.Parent = JoyContainer
 JoyOuter.Selectable = true
 JoyOuter.Active = true
 createCorner(JoyOuter, JOYSTICK_SIZE)
-local JO_Str = createStroke(JoyOuter, Theme.Text)
+local JO_Str = createStroke(JoyOuter, Theme.Accent)
 JO_Str.Transparency = 0.1
 JO_Str.Thickness = 2
 JoyOuter.ZIndex = 51
