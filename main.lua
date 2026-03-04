@@ -381,6 +381,7 @@ local function executeComboSequence(idx)
             if SkillMode == "SMART" and i == 1 then 
                 while not IsSmartHolding and isRunning do task.wait() end
                 while IsSmartHolding and isRunning do task.wait() end
+                task.wait(0.15)
             else 
                 if step.Delay and step.Delay > 0 then 
                     task.wait(step.Delay)
@@ -866,7 +867,8 @@ local function toggleVirtualKey(keyName, slotIdx, customName)
                 while isSpamming and ActiveVirtualKeys[id] do
                     actionFunc()
                     task.wait(0.15) 
-                    if not isFingerDown and Settings_Mode_Dash == "HOLD" then break end
+                    local currentMode = (id == "M1") and Settings_Mode_M1 or Settings_Mode_Dash
+                    if not isFingerDown and currentMode == "HOLD" then break end
                 end
                 btn.BackgroundColor3 = Color3.new(0,0,0); btn.TextColor3 = Theme.Accent
             end)
