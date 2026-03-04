@@ -423,6 +423,7 @@ local function executeComboSequence(idx)
         btn.Text = data.Name
         btn.BackgroundColor3 = Theme.Sidebar
         if btn:FindFirstChild("UIStroke") then btn.UIStroke.Color = Theme.Accent end
+        if SelectedComboID == idx then SelectedComboID = nil end
     end)
 end
 
@@ -431,9 +432,8 @@ local SmartTouchObject = nil
 TrackConn(UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if isChatting() or gameProcessed then return end 
     if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
-        if SelectedComboID ~= nil and not isRunning then
-            IsSmartHolding = true
-            executeComboSequence(SelectedComboID)
+        if SelectedComboID ~= nil then
+            IsSmartHolding = true -- Hanya perlu ubah status ini
         end
     end
 end))
@@ -971,13 +971,39 @@ end
 CreateComboButtonFunc = function(idx, loadedSteps)
     local btn = Instance.new("TextButton"); btn.Size = UDim2.new(0, 60, 0, 60); btn.Position = UDim2.new(0.5, -30, 0.5, 0); btn.BackgroundColor3 = Theme.Sidebar; btn.Text = "C"..idx; btn.TextColor3 = Theme.Accent; btn.Font = Enum.Font.GothamBold; btn.TextSize = 18; btn.Parent = ScreenGui; btn.Selectable = false; btn.ZIndex = 70; createCorner(btn, 30); local st = createStroke(btn, Theme.Accent)
     MakeDraggable(btn, function() 
-        if SkillMode == "INSTANT" then executeComboSequence(idx) 
+        if SkillMode == "INSTANT" then 
+            executeComboSequence(idx) 
         else 
-            if SelectedComboID==idx then SelectedComboID=nil; btn.BackgroundColor3=Theme.Sidebar; btn.UIStroke.Color=Theme.Accent; isRunning=false 
+            -- MODE SMART TAP (BARU)
+            if SelectedComboID == idx then 
+                SelectedComboID = nil
+                btn.BackgroundColor3 = Theme.Sidebar
+                btn.UIStroke.Color = Theme.Accent
+                isRunning = false 
             else 
-                if SelectedComboID and Combos[SelectedComboID] then Combos[SelectedComboID].Button.BackgroundColor3=Theme.Sidebar; Combos[SelectedComboID].Button.UIStroke.Color=Theme.Accent end
-                SelectedComboID=idx; btn.BackgroundColor3=Theme.Green; btn.UIStroke.Color=Theme.Green
-                if CurrentSmartKeyData then local old=ActiveVirtualKeys[CurrentSmartKeyData.ID]; if old then old.Button.BackgroundColor3=Color3.fromRGB(0,0,0); old.Button.TextColor3=Theme.Accent end; CurrentSmartKeyData=nil end 
+                if SelectedComboID and Combos[SelectedComboID] then 
+                    Combos[SelectedComboID].Button.BackgroundColor3 = Theme.Sidebar
+                    Combos[SelectedComboID].Button.UIStroke.Color = Theme.Accent 
+                end
+                
+                isRunning = false -- Stop kombo sisa jika ada
+                task.wait(0.05)
+                
+                SelectedComboID = idx
+                btn.BackgroundColor3 = Theme.Green
+                btn.UIStroke.Color = Theme.Green
+                
+                if CurrentSmartKeyData then 
+                    local old = ActiveVirtualKeys[CurrentSmartKeyData.ID]
+                    if old then 
+                        old.Button.BackgroundColor3 = Color3.fromRGB(0,0,0)
+                        old.Button.TextColor3 = Theme.Accent 
+                    end
+                    CurrentSmartKeyData = nil 
+                end 
+                
+                -- LANGSUNG JALANKAN AGAR EQUIP & AIM SENJATA!
+                executeComboSequence(idx)
             end 
         end 
     end)
