@@ -1334,7 +1334,9 @@ end, ModeContainer)
 ModeBtn.Size = UDim2.new(0.48, 0, 1, 0)
 ModeBtn.Position = UDim2.new(0, 0, 0, 0)
 
-local DeviceBtn = mkTool("DEVICE: MOBILE", Theme.Blue, function()
+local DeviceBtn = mkTool("DEVICE: MOBILE", Theme.Blue, nil, ModeContainer)
+
+DeviceBtn.MouseButton1Click:Connect(function()
     if DeviceMode == "MOBILE" then
         DeviceMode = "DESKTOP"
         DeviceBtn.Text = "DEVICE: DESKTOP"
@@ -1346,7 +1348,8 @@ local DeviceBtn = mkTool("DEVICE: MOBILE", Theme.Blue, function()
         DeviceBtn.BackgroundColor3 = Theme.Blue
         DeviceBtn.TextColor3 = Theme.Text
     end
-end, ModeContainer)
+end)
+
 DeviceBtn.Size = UDim2.new(0.48, 0, 1, 0)
 DeviceBtn.Position = UDim2.new(0.52, 0, 0, 0)
 
