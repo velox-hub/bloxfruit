@@ -63,6 +63,7 @@ local VirtualKeySelectors = {}
 
 -- SYSTEM VARS
 local SkillMode = "INSTANT" 
+local DeviceMode = "MOBILE"
 local CurrentSmartKeyData = nil 
 local SelectedComboID = nil 
 
@@ -391,32 +392,63 @@ local function executeComboSequence(idx)
             local vp = Camera.ViewportSize
             local x = (vp.X / 2) + M1_Offset.X
             local y = (vp.Y / 2) + M1_Offset.Y
-            local targetBtn = GetMobileButtonObj(step.Key)
-
-            if targetBtn then
+            
+            if DeviceMode == "DESKTOP" then
+                -- ====================================================
+                -- [ LOGIKA DESKTOP ] Simulasi Keyboard Langsung
+                -- ====================================================
+                local keyMap = {Z=Enum.KeyCode.Z, X=Enum.KeyCode.X, C=Enum.KeyCode.C, V=Enum.KeyCode.V, F=Enum.KeyCode.F}
+                local kCode = keyMap[step.Key]
+                
                 if step.IsHold and step.HoldTime and step.HoldTime > 0 then
-                    VIM:SendTouchEvent(currentTouchID, 0, x, y)
+                    VIM:SendKeyEvent(true, kCode, false, game)
                     local holdTimer = tick()
                     while (tick() - holdTimer) < step.HoldTime do
                         if not isRunning then break end
                         task.wait()
                     end
-                    VIM:SendTouchEvent(currentTouchID, 2, x, y)
+                    VIM:SendKeyEvent(false, kCode, false, game)
                 else
-                    while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
-                        VIM:SendTouchEvent(currentTouchID, 0, x, y)
-                        task.wait(0.03) 
-                        VIM:SendTouchEvent(currentTouchID, 2, x, y)
-                        task.wait(0.03) 
-                        if targetBtn.BackgroundColor3 ~= READY_COLOR then 
-                            break
-                        end
+                    -- Spam Key (Karena tidak bisa mendeteksi warna UI di mode desktop)
+                    for _ = 1, 3 do
+                        VIM:SendKeyEvent(true, kCode, false, game)
+                        task.wait(0.05) 
+                        VIM:SendKeyEvent(false, kCode, false, game)
+                        task.wait(0.05) 
                     end
                 end
-            end 
+            else
+                -- ====================================================
+                -- [ LOGIKA MOBILE ] Simulasi Touch ke UI Layar
+                -- ====================================================
+                local targetBtn = GetMobileButtonObj(step.Key)
+
+                if targetBtn then
+                    if step.IsHold and step.HoldTime and step.HoldTime > 0 then
+                        VIM:SendTouchEvent(currentTouchID, 0, x, y)
+                        local holdTimer = tick()
+                        while (tick() - holdTimer) < step.HoldTime do
+                            if not isRunning then break end
+                            task.wait()
+                        end
+                        VIM:SendTouchEvent(currentTouchID, 2, x, y)
+                    else
+                        while isRunning and targetBtn.BackgroundColor3 == READY_COLOR do
+                            VIM:SendTouchEvent(currentTouchID, 0, x, y)
+                            task.wait(0.1) 
+                            VIM:SendTouchEvent(currentTouchID, 2, x, y)
+                            task.wait(0.1) 
+                            
+                            if targetBtn.BackgroundColor3 ~= READY_COLOR then 
+                                break
+                            end
+                        end
+                    end
+                end 
+            end
             
             CurrentSmartKeyData = nil 
-            task.wait(0.03) 
+            task.wait(0.05) 
         end
 
         isRunning = false
@@ -1289,8 +1321,9 @@ end)
 
 local InfoLbl = Instance.new("TextLabel"); InfoLbl.Size = UDim2.new(1, 0, 0, 15); InfoLbl.Text = "RED = M1 Aim Position"; InfoLbl.TextColor3 = Theme.SubText; InfoLbl.BackgroundTransparency = 1; InfoLbl.Font = Enum.Font.Gotham; InfoLbl.TextSize = 10; InfoLbl.LayoutOrder = 3; InfoLbl.Parent = SettingsScroll
 
-mkSetSection("SKILL EXECUTION MODE", 4)
+mkSetSection("SKILL EXECUTION MODE & DEVICE", 4)
 local ModeContainer = Instance.new("Frame"); ModeContainer.Size = UDim2.new(1, 0, 0, 35); ModeContainer.BackgroundTransparency = 1; ModeContainer.LayoutOrder = 5; ModeContainer.Parent = SettingsScroll
+
 ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function() 
     if SkillMode == "INSTANT" then 
         SkillMode = "SMART"; ModeBtn.Text = "MODE: SMART TAP"; ModeBtn.BackgroundColor3 = Theme.Blue 
@@ -1298,7 +1331,24 @@ ModeBtn = mkTool("MODE: INSTANT", Theme.Green, function()
         SkillMode = "INSTANT"; ModeBtn.Text = "MODE: INSTANT"; ModeBtn.BackgroundColor3 = Theme.Green; CurrentSmartKeyData=nil; SelectedComboID=nil 
     end 
 end, ModeContainer)
-ModeBtn.Size = UDim2.new(1, 0, 1, 0)
+ModeBtn.Size = UDim2.new(0.48, 0, 1, 0)
+ModeBtn.Position = UDim2.new(0, 0, 0, 0)
+
+local DeviceBtn = mkTool("DEVICE: MOBILE", Theme.Blue, function()
+    if DeviceMode == "MOBILE" then
+        DeviceMode = "DESKTOP"
+        DeviceBtn.Text = "DEVICE: DESKTOP"
+        DeviceBtn.BackgroundColor3 = Theme.Accent
+        DeviceBtn.TextColor3 = Theme.Bg
+    else
+        DeviceMode = "MOBILE"
+        DeviceBtn.Text = "DEVICE: MOBILE"
+        DeviceBtn.BackgroundColor3 = Theme.Blue
+        DeviceBtn.TextColor3 = Theme.Text
+    end
+end, ModeContainer)
+DeviceBtn.Size = UDim2.new(0.48, 0, 1, 0)
+DeviceBtn.Position = UDim2.new(0.52, 0, 0, 0)
 
 mkSetSection("AUTO BUTTON SETTINGS", 6)
 local AutoBox = Instance.new("Frame"); AutoBox.Size = UDim2.new(1, 0, 0, 80); AutoBox.BackgroundColor3 = Theme.Sidebar; AutoBox.LayoutOrder = 7; AutoBox.Parent = SettingsScroll; createCorner(AutoBox,6)
