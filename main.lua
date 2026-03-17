@@ -61,12 +61,6 @@ local ActiveVirtualKeys = {}
 local CurrentConfigName = nil 
 local VirtualKeySelectors = {}
 
--- AIMBOT VARIABLES
-local AimbotEnabled = false
-local AimbotTarget = "Player" -- Bisa "Player" atau "NPC"
-local AimbotRadius = 350 -- Jarak maksimal deteksi dari tengah layar
-local AimbotSmoothness = 0.5 -- Kecepatan kamera mengunci target (0.1 - 1)
-
 -- SYSTEM VARS
 local SkillMode = "INSTANT" 
 local DeviceMode = "MOBILE"
@@ -261,47 +255,6 @@ local function GetMobileButtonObj(keyName)
         end
     end
     return nil
-end
-
-local function GetClosestTarget()
-    local closestDist = AimbotRadius
-    local targetPart = nil
-    local vp = Camera.ViewportSize
-    local centerScreen = Vector2.new(vp.X / 2, vp.Y / 2)
-
-    if AimbotTarget == "Player" then
-        for _, p in pairs(Players:GetPlayers()) do
-            if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-                local pos, onScreen = Camera:WorldToViewportPoint(p.Character.HumanoidRootPart.Position)
-                if onScreen then
-                    local dist = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
-                    if dist < closestDist then
-                        closestDist = dist
-                        targetPart = p.Character.HumanoidRootPart
-                    end
-                end
-            end
-        end
-    elseif AimbotTarget == "NPC" then
-        -- Blox Fruits biasanya menyimpan NPC di workspace.Enemies
-        local enemiesFolder = workspace:FindFirstChild("Enemies") 
-        if enemiesFolder then
-            for _, npc in pairs(enemiesFolder:GetChildren()) do
-                if npc:FindFirstChild("HumanoidRootPart") and npc:FindFirstChild("Humanoid") and npc.Humanoid.Health > 0 then
-                    local pos, onScreen = Camera:WorldToViewportPoint(npc.HumanoidRootPart.Position)
-                    if onScreen then
-                        local dist = (Vector2.new(pos.X, pos.Y) - centerScreen).Magnitude
-                        if dist < closestDist then
-                            closestDist = dist
-                            targetPart = npc.HumanoidRootPart
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return targetPart
 end
 
 local NotifContainer = nil 
@@ -1424,39 +1377,6 @@ Spacer.LayoutOrder = 100
 Spacer.Parent = SettingsScroll
 
 UpdateCrosshairToVIM()
-
--- [[ 7. AIMBOT SETTINGS (TAMBAHAN) ]]
-mkSetSection("AIMBOT SETTINGS", 8)
-local AimBox = Instance.new("Frame"); AimBox.Size = UDim2.new(1, 0, 0, 80); AimBox.BackgroundColor3 = Theme.Sidebar; AimBox.LayoutOrder = 9; AimBox.Parent = SettingsScroll; createCorner(AimBox,6)
-local AimPad = Instance.new("UIPadding"); AimPad.Parent=AimBox; AimPad.PaddingTop=UDim.new(0,10); AimPad.PaddingLeft=UDim.new(0,10); AimPad.PaddingRight=UDim.new(0,10); AimPad.PaddingBottom=UDim.new(0,10)
-local AimList = Instance.new("UIListLayout"); AimList.Parent=AimBox; AimList.Padding=UDim.new(0,8); AimList.SortOrder="LayoutOrder"
-
-local AimToggleBtn = mkTool("AIMBOT: OFF", Theme.Element, function()
-    AimbotEnabled = not AimbotEnabled
-    if AimbotEnabled then
-        AimToggleBtn.Text = "AIMBOT: ON"
-        AimToggleBtn.BackgroundColor3 = Theme.Green
-        AimToggleBtn.TextColor3 = Theme.Bg
-    else
-        AimToggleBtn.Text = "AIMBOT: OFF"
-        AimToggleBtn.BackgroundColor3 = Theme.Element
-        AimToggleBtn.TextColor3 = Theme.Text
-    end
-end, AimBox)
-AimToggleBtn.Size = UDim2.new(1, 0, 0, 28)
-
-local AimModeBtn = mkTool("TARGET: PLAYER", Theme.Blue, function()
-    if AimbotTarget == "Player" then 
-        AimbotTarget = "NPC"
-        AimModeBtn.Text = "TARGET: NPC (BLOX FRUITS)"
-        AimModeBtn.BackgroundColor3 = Theme.Accent
-    else 
-        AimbotTarget = "Player"
-        AimModeBtn.Text = "TARGET: PLAYER"
-        AimModeBtn.BackgroundColor3 = Theme.Blue
-    end
-end, AimBox)
-AimModeBtn.Size = UDim2.new(1, 0, 0, 28)
 
 -- === SYSTEM TAB ===
 local SysList = Instance.new("UIListLayout"); SysList.Parent=P_Sys; SysList.Padding=UDim.new(0,10); SysList.HorizontalAlignment="Center"
